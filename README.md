@@ -22,3 +22,8 @@ pnpm dev
 ```
 
 開啟 [http://localhost:3000](http://localhost:3000)
+
+## 開發注意事項
+
+右上角的**農友切換器**是 dev tool，用於在四位種子農友之間切換操作視角。  
+MVP 階段以 cookie (`current_farmer_id`) 模擬登入態，P4 會替換為正式登入。
