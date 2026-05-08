@@ -3,6 +3,7 @@ import { farmers } from '@/lib/db/schema';
 import { getCurrentFarmerId } from '@/lib/auth/farmer-context';
 import { FarmerSwitcher } from '@/components/shared/farmer-switcher';
 import { NavSidebar, NavBottom } from '@/components/shared/app-nav';
+import { Toaster } from '@/components/ui/sonner';
 
 export default async function AppLayout({ children }: { children: React.ReactNode }) {
   const [allFarmers, currentFarmerId] = await Promise.all([
@@ -32,6 +33,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
 
       {/* Mobile bottom tab bar — placed after main to stay in row 3 */}
       <NavBottom />
+      <Toaster position="top-center" />
     </div>
   );
 }
