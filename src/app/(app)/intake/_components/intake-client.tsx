@@ -1,6 +1,7 @@
 'use client';
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
+import Link from 'next/link';
 import { Loader2, Sparkles } from 'lucide-react';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
@@ -107,6 +108,16 @@ export function IntakeClient({ products }: IntakeClientProps) {
           onSaved={handleSaved}
           onCancel={handleClear}
         />
+      )}
+
+      {/* Manual order link */}
+      {!draft && (
+        <p className="text-center text-sm text-zinc-500">
+          沒有 LINE 訊息？{' '}
+          <Link href="/intake/manual" className="underline underline-offset-2 hover:text-zinc-700">
+            手動建立訂單
+          </Link>
+        </p>
       )}
 
       {/* Sticky bottom action bar — only when no draft */}
