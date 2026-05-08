@@ -25,12 +25,28 @@ import {
 } from '@/components/ui/select';
 import { orderDraftFormSchema, type OrderDraftFormData } from '@/lib/validation/order-draft';
 import { saveOrderDraft } from '@/app/(app)/intake/actions';
+import { updateOrder } from '@/app/(app)/orders/actions';
 import type { ParsedOrderDraft } from '@/lib/llm/types';
 import type { Product } from '@/lib/db/schema';
 
+export type ExistingOrderForEdit = {
+  id: string;
+  items: { product_id: string; quantity: number; unit_price: number }[];
+  recipient_name: string;
+  recipient_phone: string;
+  recipient_address: string | null;
+  delivery_zip: string | null;
+  delivery_preference: string | null;
+  desired_arrival_date: string | null;
+  payment_method: string | null;
+  bank_last_5: string | null;
+  notes: string | null;
+};
+
 interface OrderDraftEditorProps {
-  draft: ParsedOrderDraft;
-  rawText: string;
+  draft?: ParsedOrderDraft;
+  rawText?: string;
+  existingOrder?: ExistingOrderForEdit;
   products: Product[];
   onSaved: (orderId: string) => void;
   onCancel: () => void;
@@ -74,33 +90,54 @@ function ConfidenceBar({ confidence }: { confidence: number }) {
 export function OrderDraftEditor({
   draft,
   rawText,
+  existingOrder,
   products,
   onSaved,
   onCancel,
 }: OrderDraftEditorProps) {
   const [isSaving, setIsSaving] = useState(false);
+  const isEditMode = !!existingOrder;
   const activeProducts = products.filter((p) => p.is_active);
 
   const form = useForm<OrderDraftFormData>({
     resolver: zodResolver(orderDraftFormSchema),
-    defaultValues: {
-      items: draft.items
-        .filter((i) => i.product_id)
-        .map((i) => ({
-          product_id: i.product_id,
-          quantity: i.quantity,
-          unit_price: Number(products.find((p) => p.id === i.product_id)?.price ?? 0),
-        })),
-      recipient_name: draft.recipient_name ?? '',
-      recipient_phone: draft.recipient_phone ?? '',
-      recipient_address: draft.recipient_address ?? '',
-      delivery_zip: draft.delivery_zip ?? '',
-      delivery_preference: 'any',
-      desired_arrival_date: draft.desired_arrival_date ?? '',
-      payment_method: 'transfer',
-      bank_last_5: draft.bank_last_5 ?? '',
-      notes: draft.notes ?? '',
-    },
+    defaultValues: isEditMode
+      ? {
+          items: existingOrder!.items.map((i) => ({
+            product_id: i.product_id,
+            quantity: i.quantity,
+            unit_price: i.unit_price,
+          })),
+          recipient_name: existingOrder!.recipient_name,
+          recipient_phone: existingOrder!.recipient_phone,
+          recipient_address: existingOrder!.recipient_address ?? '',
+          delivery_zip: existingOrder!.delivery_zip ?? '',
+          delivery_preference:
+            (existingOrder!.delivery_preference as 'any' | 'weekday' | 'date') ?? 'any',
+          desired_arrival_date: existingOrder!.desired_arrival_date ?? '',
+          payment_method:
+            (existingOrder!.payment_method as 'transfer' | 'cod') ?? 'transfer',
+          bank_last_5: existingOrder!.bank_last_5 ?? '',
+          notes: existingOrder!.notes ?? '',
+        }
+      : {
+          items: draft!.items
+            .filter((i) => i.product_id)
+            .map((i) => ({
+              product_id: i.product_id!,
+              quantity: i.quantity,
+              unit_price: Number(products.find((p) => p.id === i.product_id)?.price ?? 0),
+            })),
+          recipient_name: draft!.recipient_name ?? '',
+          recipient_phone: draft!.recipient_phone ?? '',
+          recipient_address: draft!.recipient_address ?? '',
+          delivery_zip: draft!.delivery_zip ?? '',
+          delivery_preference: 'any',
+          desired_arrival_date: draft!.desired_arrival_date ?? '',
+          payment_method: 'transfer',
+          bank_last_5: draft!.bank_last_5 ?? '',
+          notes: draft!.notes ?? '',
+        },
   });
 
   const { fields, append, remove } = useFieldArray({
@@ -117,25 +154,34 @@ export function OrderDraftEditor({
     0,
   );
 
-  async function submit(status: 'draft' | 'confirmed') {
+  async function submit(status?: 'draft' | 'confirmed') {
     const valid = await form.trigger();
     if (!valid) return;
 
     const data = form.getValues();
     setIsSaving(true);
     try {
-      const result = await saveOrderDraft(data, {
-        rawText,
-        confidence: draft.confidence,
-        ambiguities: draft.ambiguities,
-        status,
-      });
-
-      if ('error' in result) {
-        toast.error(result.error);
+      if (isEditMode) {
+        const result = await updateOrder(existingOrder!.id, data);
+        if (result && 'error' in result) {
+          toast.error(result.error);
+        } else {
+          toast.success('訂單已更新');
+          onSaved(existingOrder!.id);
+        }
       } else {
-        toast.success(status === 'confirmed' ? '訂單已確認' : '草稿已儲存');
-        onSaved(result.orderId);
+        const result = await saveOrderDraft(data, {
+          rawText: rawText ?? '',
+          confidence: draft!.confidence,
+          ambiguities: draft!.ambiguities,
+          status: status!,
+        });
+        if ('error' in result) {
+          toast.error(result.error);
+        } else {
+          toast.success(status === 'confirmed' ? '訂單已確認' : '草稿已儲存');
+          onSaved(result.orderId);
+        }
       }
     } catch {
       toast.error('儲存失敗，請稍後重試');
@@ -147,21 +193,23 @@ export function OrderDraftEditor({
   return (
     <Form {...form}>
       <div className="space-y-4 pb-20">
-        {/* ── 區塊 1：解析摘要 ─────────────────────────────── */}
-        <Card>
-          <CardContent className="p-4 space-y-3">
-            <ConfidenceBar confidence={draft.confidence} />
-            {draft.ambiguities.length > 0 && (
-              <div className="space-y-1 rounded-md border border-amber-200 bg-amber-50 p-3">
-                {draft.ambiguities.map((a, i) => (
-                  <p key={i} className="text-xs text-amber-800">
-                    ⚠️ {a}
-                  </p>
-                ))}
-              </div>
-            )}
-          </CardContent>
-        </Card>
+        {/* ── 區塊 1：解析摘要（僅 create 模式） ──────────── */}
+        {!isEditMode && draft && (
+          <Card>
+            <CardContent className="p-4 space-y-3">
+              <ConfidenceBar confidence={draft.confidence} />
+              {draft.ambiguities.length > 0 && (
+                <div className="space-y-1 rounded-md border border-amber-200 bg-amber-50 p-3">
+                  {draft.ambiguities.map((a, i) => (
+                    <p key={i} className="text-xs text-amber-800">
+                      ⚠️ {a}
+                    </p>
+                  ))}
+                </div>
+              )}
+            </CardContent>
+          </Card>
+        )}
 
         {/* ── 區塊 2：商品明細 ──────────────────────────────── */}
         <Card>
@@ -298,7 +346,7 @@ export function OrderDraftEditor({
               render={({ field }) => (
                 <FormItem
                   className={
-                    isAmbiguous(['姓名', '收件人'], draft.ambiguities) ? AMBIGUOUS_CLASS : ''
+                    isAmbiguous(['姓名', '收件人'], draft?.ambiguities ?? []) ? AMBIGUOUS_CLASS : ''
                   }
                 >
                   <FormLabel>收件人姓名 *</FormLabel>
@@ -315,7 +363,7 @@ export function OrderDraftEditor({
               name="recipient_phone"
               render={({ field }) => (
                 <FormItem
-                  className={isAmbiguous(['電話'], draft.ambiguities) ? AMBIGUOUS_CLASS : ''}
+                  className={isAmbiguous(['電話'], draft?.ambiguities ?? []) ? AMBIGUOUS_CLASS : ''}
                 >
                   <FormLabel>電話 *</FormLabel>
                   <FormControl>
@@ -331,7 +379,7 @@ export function OrderDraftEditor({
               name="recipient_address"
               render={({ field }) => (
                 <FormItem
-                  className={isAmbiguous(['地址'], draft.ambiguities) ? AMBIGUOUS_CLASS : ''}
+                  className={isAmbiguous(['地址'], draft?.ambiguities ?? []) ? AMBIGUOUS_CLASS : ''}
                 >
                   <FormLabel>收件地址 *</FormLabel>
                   <FormControl>
@@ -460,21 +508,29 @@ export function OrderDraftEditor({
 
       {/* ── 區塊 5：sticky bottom bar ─────────────────────── */}
       <div className="sticky bottom-0 -mx-4 border-t bg-white px-4 py-3">
-        <div className="grid grid-cols-3 gap-2">
+        <div className={`grid gap-2 ${isEditMode ? 'grid-cols-2' : 'grid-cols-3'}`}>
           <Button type="button" variant="ghost" onClick={onCancel} disabled={isSaving}>
             取消
           </Button>
-          <Button
-            type="button"
-            variant="secondary"
-            onClick={() => submit('draft')}
-            disabled={isSaving}
-          >
-            {isSaving ? <Loader2 className="size-4 animate-spin" /> : '存草稿'}
-          </Button>
-          <Button type="button" onClick={() => submit('confirmed')} disabled={isSaving}>
-            {isSaving ? <Loader2 className="size-4 animate-spin" /> : '確認存檔'}
-          </Button>
+          {isEditMode ? (
+            <Button type="button" onClick={() => submit()} disabled={isSaving}>
+              {isSaving ? <Loader2 className="size-4 animate-spin" /> : '儲存'}
+            </Button>
+          ) : (
+            <>
+              <Button
+                type="button"
+                variant="secondary"
+                onClick={() => submit('draft')}
+                disabled={isSaving}
+              >
+                {isSaving ? <Loader2 className="size-4 animate-spin" /> : '存草稿'}
+              </Button>
+              <Button type="button" onClick={() => submit('confirmed')} disabled={isSaving}>
+                {isSaving ? <Loader2 className="size-4 animate-spin" /> : '確認存檔'}
+              </Button>
+            </>
+          )}
         </div>
       </div>
     </Form>
