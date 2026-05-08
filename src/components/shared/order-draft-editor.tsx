@@ -1,102 +1,482 @@
 'use client';
+import { useState } from 'react';
+import { useForm, useFieldArray } from 'react-hook-form';
+import { zodResolver } from '@hookform/resolvers/zod';
+import { Trash2, Plus, Loader2 } from 'lucide-react';
+import { toast } from 'sonner';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Textarea } from '@/components/ui/textarea';
+import {
+  Form,
+  FormField,
+  FormItem,
+  FormLabel,
+  FormControl,
+  FormMessage,
+} from '@/components/ui/form';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
+import { orderDraftFormSchema, type OrderDraftFormData } from '@/lib/validation/order-draft';
+import { saveOrderDraft } from '@/app/(app)/intake/actions';
 import type { ParsedOrderDraft } from '@/lib/llm/types';
+import type { Product } from '@/lib/db/schema';
 
 interface OrderDraftEditorProps {
   draft: ParsedOrderDraft;
   rawText: string;
+  products: Product[];
   onSaved: (orderId: string) => void;
+  onCancel: () => void;
 }
 
-function ConfidenceBadge({ confidence }: { confidence: number }) {
+// Returns true if this field is called out as ambiguous by the LLM
+function isAmbiguous(keywords: string[], ambiguities: string[]): boolean {
+  return ambiguities.some((a) => keywords.some((kw) => a.includes(kw)));
+}
+
+// Thin amber ring applied to a FormItem when the field is ambiguous
+const AMBIGUOUS_CLASS = 'ring-1 ring-amber-400 rounded-md px-2 pb-2';
+
+// ── Confidence progress bar ────────────────────────────────────────────────
+function ConfidenceBar({ confidence }: { confidence: number }) {
   const pct = Math.round(confidence * 100);
-  const variant = confidence >= 0.85 ? 'default' : confidence >= 0.5 ? 'secondary' : 'destructive';
-  return <Badge variant={variant}>{pct}% 確信</Badge>;
-}
+  const barColor =
+    confidence < 0.5
+      ? 'bg-red-400'
+      : confidence < 0.8
+        ? 'bg-amber-400'
+        : 'bg-emerald-400';
 
-function Field({ label, value }: { label: string; value: string | null }) {
   return (
-    <div className="flex gap-2 text-sm">
-      <span className="w-16 shrink-0 text-zinc-500">{label}</span>
-      <span className={value ? 'text-zinc-900' : 'text-zinc-400'}>{value ?? '—'}</span>
+    <div className="space-y-1">
+      <div className="flex justify-between text-xs text-zinc-500">
+        <span>解析確信度</span>
+        <span>{pct}%</span>
+      </div>
+      <div className="h-2 rounded-full bg-zinc-200">
+        <div
+          className={`h-2 rounded-full transition-all ${barColor}`}
+          style={{ width: `${pct}%` }}
+        />
+      </div>
     </div>
   );
 }
 
-export function OrderDraftEditor({ draft, onSaved: _onSaved }: OrderDraftEditorProps) {
+// ── Main component ─────────────────────────────────────────────────────────
+export function OrderDraftEditor({
+  draft,
+  rawText,
+  products,
+  onSaved,
+  onCancel,
+}: OrderDraftEditorProps) {
+  const [isSaving, setIsSaving] = useState(false);
+  const activeProducts = products.filter((p) => p.is_active);
+
+  const form = useForm<OrderDraftFormData>({
+    resolver: zodResolver(orderDraftFormSchema),
+    defaultValues: {
+      items: draft.items
+        .filter((i) => i.product_id)
+        .map((i) => ({
+          product_id: i.product_id,
+          quantity: i.quantity,
+          unit_price: Number(products.find((p) => p.id === i.product_id)?.price ?? 0),
+        })),
+      recipient_name: draft.recipient_name ?? '',
+      recipient_phone: draft.recipient_phone ?? '',
+      recipient_address: draft.recipient_address ?? '',
+      delivery_zip: draft.delivery_zip ?? '',
+      delivery_preference: 'any',
+      desired_arrival_date: draft.desired_arrival_date ?? '',
+      payment_method: 'transfer',
+      bank_last_5: draft.bank_last_5 ?? '',
+      notes: draft.notes ?? '',
+    },
+  });
+
+  const { fields, append, remove } = useFieldArray({
+    control: form.control,
+    name: 'items',
+  });
+
+  const watchedItems = form.watch('items') ?? [];
+  const deliveryPref = form.watch('delivery_preference');
+  const paymentMethod = form.watch('payment_method');
+
+  const totalAmount = watchedItems.reduce(
+    (sum, item) => sum + (item.quantity || 0) * (item.unit_price || 0),
+    0,
+  );
+
+  async function submit(status: 'draft' | 'confirmed') {
+    const valid = await form.trigger();
+    if (!valid) return;
+
+    const data = form.getValues();
+    setIsSaving(true);
+    try {
+      const result = await saveOrderDraft(data, {
+        rawText,
+        confidence: draft.confidence,
+        ambiguities: draft.ambiguities,
+        status,
+      });
+
+      if ('error' in result) {
+        toast.error(result.error);
+      } else {
+        toast.success(status === 'confirmed' ? '訂單已確認' : '草稿已儲存');
+        onSaved(result.orderId);
+      }
+    } catch {
+      toast.error('儲存失敗，請稍後重試');
+    } finally {
+      setIsSaving(false);
+    }
+  }
+
   return (
-    <div className="space-y-3">
-      {/* Header row */}
-      <div className="flex items-center justify-between">
-        <span className="font-semibold text-zinc-800">解析結果</span>
-        <ConfidenceBadge confidence={draft.confidence} />
+    <Form {...form}>
+      <div className="space-y-4 pb-20">
+        {/* ── 區塊 1：解析摘要 ─────────────────────────────── */}
+        <Card>
+          <CardContent className="p-4 space-y-3">
+            <ConfidenceBar confidence={draft.confidence} />
+            {draft.ambiguities.length > 0 && (
+              <div className="space-y-1 rounded-md border border-amber-200 bg-amber-50 p-3">
+                {draft.ambiguities.map((a, i) => (
+                  <p key={i} className="text-xs text-amber-800">
+                    ⚠️ {a}
+                  </p>
+                ))}
+              </div>
+            )}
+          </CardContent>
+        </Card>
+
+        {/* ── 區塊 2：商品明細 ──────────────────────────────── */}
+        <Card>
+          <CardHeader className="px-4 pt-4 pb-2">
+            <CardTitle className="text-sm">商品明細</CardTitle>
+          </CardHeader>
+          <CardContent className="px-4 pb-4 space-y-3">
+            {fields.map((field, index) => {
+              const pid = form.watch(`items.${index}.product_id`);
+              const unitPrice = form.watch(`items.${index}.unit_price`) ?? 0;
+              const qty = form.watch(`items.${index}.quantity`) ?? 0;
+
+              return (
+                <div
+                  key={field.id}
+                  className="relative rounded-md border border-zinc-200 p-3 space-y-2"
+                >
+                  {/* Product select */}
+                  <FormField
+                    control={form.control}
+                    name={`items.${index}.product_id`}
+                    render={({ field: f }) => (
+                      <FormItem>
+                        <FormLabel className="text-xs">商品</FormLabel>
+                        <Select
+                          value={f.value}
+                          onValueChange={(v) => {
+                            f.onChange(v);
+                            const p = activeProducts.find((p) => p.id === v);
+                            if (p) form.setValue(`items.${index}.unit_price`, Number(p.price));
+                          }}
+                        >
+                          <FormControl>
+                            <SelectTrigger className="w-full">
+                              <SelectValue placeholder="選擇商品" />
+                            </SelectTrigger>
+                          </FormControl>
+                          <SelectContent>
+                            {activeProducts.map((p) => (
+                              <SelectItem key={p.id} value={p.id}>
+                                {p.display_name}（NT${Number(p.price).toLocaleString()}）
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+
+                  <div className="grid grid-cols-3 gap-2 items-end">
+                    {/* Quantity */}
+                    <FormField
+                      control={form.control}
+                      name={`items.${index}.quantity`}
+                      render={({ field: f }) => (
+                        <FormItem>
+                          <FormLabel className="text-xs">數量</FormLabel>
+                          <FormControl>
+                            <Input
+                              type="number"
+                              min={1}
+                              value={f.value || ''}
+                              onChange={(e) =>
+                                f.onChange(e.target.value === '' ? 0 : e.target.valueAsNumber)
+                              }
+                            />
+                          </FormControl>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+
+                    {/* Unit price (read-only) */}
+                    <div className="space-y-2">
+                      <p className="text-xs font-medium leading-none text-zinc-500">單價</p>
+                      <p className="flex h-9 items-center rounded-md bg-zinc-50 px-3 text-sm text-zinc-500">
+                        {pid ? `NT$${unitPrice.toLocaleString()}` : '—'}
+                      </p>
+                    </div>
+
+                    {/* Subtotal */}
+                    <div className="space-y-2">
+                      <p className="text-xs font-medium leading-none text-zinc-500">小計</p>
+                      <p className="flex h-9 items-center rounded-md bg-zinc-50 px-3 text-sm font-medium">
+                        {pid ? `NT$${(qty * unitPrice).toLocaleString()}` : '—'}
+                      </p>
+                    </div>
+                  </div>
+
+                  {/* Delete button */}
+                  {fields.length > 1 && (
+                    <button
+                      type="button"
+                      onClick={() => remove(index)}
+                      className="absolute right-2 top-2 rounded p-1 text-zinc-400 hover:text-red-500"
+                      aria-label="刪除此商品"
+                    >
+                      <Trash2 className="size-4" />
+                    </button>
+                  )}
+                </div>
+              );
+            })}
+
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              className="w-full"
+              onClick={() => append({ product_id: '', quantity: 1, unit_price: 0 })}
+            >
+              <Plus className="mr-1 size-4" />
+              新增商品
+            </Button>
+
+            {/* Total */}
+            <div className="flex justify-between border-t pt-2 text-sm font-semibold">
+              <span>合計</span>
+              <span>NT${totalAmount.toLocaleString()}</span>
+            </div>
+          </CardContent>
+        </Card>
+
+        {/* ── 區塊 3：收件人 ────────────────────────────────── */}
+        <Card>
+          <CardHeader className="px-4 pt-4 pb-2">
+            <CardTitle className="text-sm">收件資訊</CardTitle>
+          </CardHeader>
+          <CardContent className="px-4 pb-4 space-y-3">
+            <FormField
+              control={form.control}
+              name="recipient_name"
+              render={({ field }) => (
+                <FormItem
+                  className={
+                    isAmbiguous(['姓名', '收件人'], draft.ambiguities) ? AMBIGUOUS_CLASS : ''
+                  }
+                >
+                  <FormLabel>收件人姓名 *</FormLabel>
+                  <FormControl>
+                    <Input {...field} />
+                  </FormControl>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+
+            <FormField
+              control={form.control}
+              name="recipient_phone"
+              render={({ field }) => (
+                <FormItem
+                  className={isAmbiguous(['電話'], draft.ambiguities) ? AMBIGUOUS_CLASS : ''}
+                >
+                  <FormLabel>電話 *</FormLabel>
+                  <FormControl>
+                    <Input {...field} type="tel" inputMode="tel" />
+                  </FormControl>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+
+            <FormField
+              control={form.control}
+              name="recipient_address"
+              render={({ field }) => (
+                <FormItem
+                  className={isAmbiguous(['地址'], draft.ambiguities) ? AMBIGUOUS_CLASS : ''}
+                >
+                  <FormLabel>收件地址 *</FormLabel>
+                  <FormControl>
+                    <Input {...field} />
+                  </FormControl>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+
+            <FormField
+              control={form.control}
+              name="delivery_zip"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>郵遞區號</FormLabel>
+                  <FormControl>
+                    <Input {...field} inputMode="numeric" maxLength={6} className="w-28" />
+                  </FormControl>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+
+            <FormField
+              control={form.control}
+              name="delivery_preference"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>配送偏好</FormLabel>
+                  <Select value={field.value} onValueChange={field.onChange}>
+                    <FormControl>
+                      <SelectTrigger className="w-full">
+                        <SelectValue />
+                      </SelectTrigger>
+                    </FormControl>
+                    <SelectContent>
+                      <SelectItem value="any">都可以</SelectItem>
+                      <SelectItem value="weekday">只能平日</SelectItem>
+                      <SelectItem value="date">指定日期</SelectItem>
+                    </SelectContent>
+                  </Select>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+
+            {deliveryPref === 'date' && (
+              <FormField
+                control={form.control}
+                name="desired_arrival_date"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>指定到貨日</FormLabel>
+                    <FormControl>
+                      <Input {...field} type="date" />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+            )}
+          </CardContent>
+        </Card>
+
+        {/* ── 區塊 4：付款 + 備註 ───────────────────────────── */}
+        <Card>
+          <CardHeader className="px-4 pt-4 pb-2">
+            <CardTitle className="text-sm">付款與備註</CardTitle>
+          </CardHeader>
+          <CardContent className="px-4 pb-4 space-y-3">
+            <FormField
+              control={form.control}
+              name="payment_method"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>付款方式</FormLabel>
+                  <Select value={field.value} onValueChange={field.onChange}>
+                    <FormControl>
+                      <SelectTrigger className="w-full">
+                        <SelectValue />
+                      </SelectTrigger>
+                    </FormControl>
+                    <SelectContent>
+                      <SelectItem value="transfer">銀行轉帳</SelectItem>
+                      <SelectItem value="cod">貨到付款</SelectItem>
+                    </SelectContent>
+                  </Select>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+
+            {paymentMethod === 'transfer' && (
+              <FormField
+                control={form.control}
+                name="bank_last_5"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>帳號末5碼</FormLabel>
+                    <FormControl>
+                      <Input {...field} inputMode="numeric" maxLength={5} className="w-28" />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+            )}
+
+            <FormField
+              control={form.control}
+              name="notes"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>備註</FormLabel>
+                  <FormControl>
+                    <Textarea {...field} rows={2} />
+                  </FormControl>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+          </CardContent>
+        </Card>
       </div>
 
-      {/* Ambiguities */}
-      {draft.ambiguities.length > 0 && (
-        <Card className="border-amber-200 bg-amber-50">
-          <CardContent className="p-3 space-y-1">
-            <p className="text-xs font-semibold text-amber-800">需補充資訊</p>
-            {draft.ambiguities.map((a, i) => (
-              <p key={i} className="text-xs text-amber-700">• {a}</p>
-            ))}
-          </CardContent>
-        </Card>
-      )}
-
-      {/* Items */}
-      <Card>
-        <CardHeader className="pb-2 pt-4 px-4">
-          <CardTitle className="text-sm">訂購商品</CardTitle>
-        </CardHeader>
-        <CardContent className="px-4 pb-4 space-y-2">
-          {draft.items.length === 0 ? (
-            <p className="text-sm text-zinc-400">未偵測到商品</p>
-          ) : (
-            draft.items.map((item, i) => (
-              <div key={i} className="flex items-center justify-between text-sm">
-                <span>{item.product_display_name}</span>
-                <Badge variant="outline">× {item.quantity}</Badge>
-              </div>
-            ))
-          )}
-        </CardContent>
-      </Card>
-
-      {/* Recipient */}
-      <Card>
-        <CardHeader className="pb-2 pt-4 px-4">
-          <CardTitle className="text-sm">收件資訊</CardTitle>
-        </CardHeader>
-        <CardContent className="px-4 pb-4 space-y-1.5">
-          <Field label="姓名" value={draft.recipient_name} />
-          <Field label="電話" value={draft.recipient_phone} />
-          <Field label="地址" value={draft.recipient_address} />
-          {draft.desired_arrival_date && (
-            <Field label="到貨日" value={draft.desired_arrival_date} />
-          )}
-          {draft.delivery_preference && (
-            <Field label="配送偏好" value={draft.delivery_preference} />
-          )}
-        </CardContent>
-      </Card>
-
-      {/* Extra info */}
-      {(draft.bank_last_5 || draft.notes) && (
-        <Card>
-          <CardContent className="px-4 py-4 space-y-1.5">
-            {draft.bank_last_5 && <Field label="帳號末5碼" value={draft.bank_last_5} />}
-            {draft.notes && <Field label="備註" value={draft.notes} />}
-          </CardContent>
-        </Card>
-      )}
-
-      {/* Save button — full implementation in P0-E3 */}
-      <Button className="w-full" disabled>
-        儲存草稿（P0-E3 實作）
-      </Button>
-    </div>
+      {/* ── 區塊 5：sticky bottom bar ─────────────────────── */}
+      <div className="sticky bottom-0 -mx-4 border-t bg-white px-4 py-3">
+        <div className="grid grid-cols-3 gap-2">
+          <Button type="button" variant="ghost" onClick={onCancel} disabled={isSaving}>
+            取消
+          </Button>
+          <Button
+            type="button"
+            variant="secondary"
+            onClick={() => submit('draft')}
+            disabled={isSaving}
+          >
+            {isSaving ? <Loader2 className="size-4 animate-spin" /> : '存草稿'}
+          </Button>
+          <Button type="button" onClick={() => submit('confirmed')} disabled={isSaving}>
+            {isSaving ? <Loader2 className="size-4 animate-spin" /> : '確認存檔'}
+          </Button>
+        </div>
+      </div>
+    </Form>
   );
 }
