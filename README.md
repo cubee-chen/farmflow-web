@@ -1,6 +1,14 @@
 # FarmFlow
 
+[![Deploy with Vercel](https://vercel.com/button)](https://vercel.com/new/clone?repository-url=https://github.com/cubee-chen/farmflow-web)
+
 團購管理平台 MVP
+
+## 正式環境
+
+Production URL: `https://farmflow-web.vercel.app`
+
+部署狀態：每次 push `main` 分支自動重新部署。
 
 ## 技術棧
 
@@ -20,6 +28,18 @@ cp .env.example .env.local
 # 填入 .env.local 的環境變數
 pnpm dev
 ```
+
+## 環境變數
+
+| 變數名 | 說明 |
+|--------|------|
+| `DATABASE_URL` | Supabase transaction pooler URL（port **6543**，不可用 5432）<br>`postgresql://postgres.[ref]:[pw]@aws-0-ap-southeast-1.pooler.supabase.com:6543/postgres?pgmode=transaction` |
+| `NEXT_PUBLIC_SUPABASE_URL` | Supabase project URL |
+| `NEXT_PUBLIC_SUPABASE_ANON_KEY` | Supabase anon key |
+| `SUPABASE_SERVICE_ROLE_KEY` | Supabase service role key（server only） |
+| `ANTHROPIC_API_KEY` | Anthropic API key，用於 LLM 訂單解析 |
+
+Vercel 部署：到 **Settings → Environment Variables** 貼上以上變數，三個環境（Production / Preview / Development）都勾選。
 
 開啟 [http://localhost:3000](http://localhost:3000)
 

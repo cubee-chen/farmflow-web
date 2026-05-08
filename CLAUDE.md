@@ -63,3 +63,12 @@ Strong success criteria let you loop independently. Weak criteria ("make it work
 ---
 
 **These guidelines are working if:** fewer unnecessary changes in diffs, fewer rewrites due to overcomplication, and clarifying questions come before implementation rather than after mistakes.
+
+## Git Commit Convention
+- **CRITICAL: Commit messages MUST always be written in English. Using Chinese in commit messages is strictly forbidden.**
+- Format: `<type>(<scope>): <task-id> <short description>`
+- Types: feat / fix / chore / docs / refactor / test — choose the most appropriate type based on the change
+- Scopes: schema / auth / intake / orders / products / fulfillment / pwa / deploy
+- Example: `feat(schema): P0-B1 complete Drizzle schema 7 tables`
+- **CRITICAL: Before running any git commit command, show the proposed commit message to the user and wait for explicit confirmation. Never commit without user approval.**
+- Never auto-push. Commit only, wait for human confirmation.
