@@ -3,12 +3,13 @@ import { and, desc, eq } from 'drizzle-orm';
 import { db } from '@/lib/db';
 import { orders, orderItems, orderEvents, products, notificationTemplates } from '@/lib/db/schema';
 import { getCurrentFarmer } from '@/lib/auth/require-farmer';
+import { renderTemplate } from '@/lib/notification/render';
 import { OrderDetailClient } from './_components/order-detail-client';
 
 const STATUS_TO_TRIGGER: Record<string, string> = {
-  confirmed: 'order_confirmed',
-  shipped: 'order_shipped',
-  completed: 'order_completed',
+  confirmed: 'confirmed',
+  shipped: 'shipped',
+  completed: 'completed',
 };
 
 function buildDefaultText(
@@ -19,24 +20,6 @@ function buildDefaultText(
     .map((i) => `• ${i.display_name ?? '商品'} × ${i.quantity}  NT$${Number(i.subtotal).toLocaleString()}`)
     .join('\n');
   return `親愛的 ${order.recipient_name} 您好，\n\n您的訂單 ${order.order_number ?? ''} 已確認！\n\n${lines}\n\n合計：NT$${Number(order.total_amount).toLocaleString()}\n\n感謝您的惠顧！`;
-}
-
-function fillTemplate(
-  template: string,
-  order: {
-    recipient_name: string;
-    order_number: string | null;
-    total_amount: string;
-    ship_date: string | null;
-    tracking_number: string | null;
-  },
-): string {
-  return template
-    .replace(/\{recipient_name\}/g, order.recipient_name)
-    .replace(/\{order_number\}/g, order.order_number ?? '')
-    .replace(/\{total_amount\}/g, `NT$${Number(order.total_amount).toLocaleString()}`)
-    .replace(/\{ship_date\}/g, order.ship_date ?? '')
-    .replace(/\{tracking_number\}/g, order.tracking_number ?? '');
 }
 
 interface Props {
@@ -90,8 +73,22 @@ export default async function OrderDetailPage({ params }: Props) {
     ?? templateRows[0]
     ?? null;
 
+  const itemsSummary = itemRows
+    .map((i) => `${i.display_name ?? '商品'} × ${i.quantity}`)
+    .join('、');
+
   const notificationText = matchedTemplate
-    ? fillTemplate(matchedTemplate.template_text, order)
+    ? renderTemplate(matchedTemplate.template_text, {
+        recipient_name: order.recipient_name,
+        order_number: order.order_number ?? '',
+        total_amount: `NT$${Number(order.total_amount).toLocaleString()}`,
+        ship_date: order.ship_date ?? '',
+        tracking_number: order.tracking_number ?? '',
+        items_summary: itemsSummary,
+        recipient_address: order.recipient_address ?? '',
+        desired_arrival_date: order.desired_arrival_date ?? '',
+        shipping_provider: order.shipping_provider ?? '',
+      })
     : buildDefaultText(order, itemRows);
 
   return (
