@@ -113,6 +113,8 @@ export const orders = pgTable(
     status: text("status").notNull().default("draft"),
     total_amount: numeric("total_amount", { precision: 10, scale: 2 }).notNull(),
     notes: text("notes"),
+    raw_image_urls: text("raw_image_urls").array(),
+    image_quality: text("image_quality"),
     notified_customer_at: timestamp("notified_customer_at", { withTimezone: true }),
     created_at: timestamp("created_at", { withTimezone: true }).defaultNow(),
     updated_at: timestamp("updated_at", { withTimezone: true }).defaultNow(),

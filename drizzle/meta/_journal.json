@@ -15,6 +15,13 @@
       "when": 1778473570254,
       "tag": "0001_panoramic_radioactive_man",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1778476300858,
+      "tag": "0002_lonely_landau",
+      "breakpoints": true
     }
   ]
 }
