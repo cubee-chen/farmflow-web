@@ -12,6 +12,8 @@ export function buildProductCatalog(products: Product[]): string {
 }
 
 export function buildFewShots(products: Product[]): string {
+  if (products.length === 0) return '';
+
   const p0 = products[0];
   const p1 = products[1] ?? products[0];
   const p2 = products[2] ?? products[0];
@@ -70,6 +72,5 @@ ${buildProductCatalog(products)}
 只輸出一個合法的 JSON 物件，格式如下：
 {"items":[{"product_display_name":"...","quantity":數字}],"recipient_name":"...或null","recipient_phone":"...或null","recipient_address":"...或null","delivery_zip":"...或null","delivery_preference":"...或null","desired_arrival_date":"YYYY-MM-DD或null","bank_last_5":"...或null","notes":"...或null","confidence":0.0到1.0,"ambiguities":["..."]}
 
-## 範例
-${buildFewShots(products)}`;
+${buildFewShots(products) ? `## 範例\n${buildFewShots(products)}` : ''}`;
 }

@@ -58,8 +58,5 @@ ${buildProductCatalog(products)}
 只輸出一個合法的 JSON 物件，格式如下：
 {"items":[{"product_display_name":"...","quantity":數字}],"recipient_name":"...或null","recipient_phone":"...或null","recipient_address":"...或null","delivery_zip":"...或null","delivery_preference":"...或null","desired_arrival_date":"YYYY-MM-DD或null","bank_last_5":"...或null","notes":"...或null","confidence":0.0到1.0,"ambiguities":["..."],"image_quality":"clear|blurry|partial|unreadable","ocr_text":"...或null"}
 
-## 範例
-${buildFewShots(products)}
-
-${buildImageFewShots(products)}`;
+${buildFewShots(products) ? `## 範例\n${buildFewShots(products)}\n\n${buildImageFewShots(products)}` : `## 範例\n${buildImageFewShots(products)}`}`;
 }
