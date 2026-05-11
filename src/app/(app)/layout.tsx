@@ -1,10 +1,12 @@
 import { getCurrentFarmer } from '@/lib/auth/get-current-farmer';
+import { getExceptionCount } from '@/lib/queries/exceptions';
 import { FarmerMenu } from '@/components/shared/farmer-menu';
 import { NavSidebar, NavBottom } from '@/components/shared/app-nav';
 import { Toaster } from '@/components/ui/sonner';
 
 export default async function AppLayout({ children }: { children: React.ReactNode }) {
   const farmer = await getCurrentFarmer();
+  const exceptionCount = await getExceptionCount(farmer.id).catch(() => 0);
 
   return (
     <div className="h-screen grid grid-rows-[3.5rem_1fr_4rem] lg:grid-rows-[3.5rem_1fr] lg:grid-cols-[14rem_1fr]">
@@ -15,7 +17,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
       </header>
 
       {/* Desktop sidebar */}
-      <NavSidebar />
+      <NavSidebar exceptionCount={exceptionCount} />
 
       {/* Main content */}
       <main className="row-start-2 lg:col-start-2 overflow-auto">
@@ -23,7 +25,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
       </main>
 
       {/* Mobile bottom tab bar */}
-      <NavBottom />
+      <NavBottom exceptionCount={exceptionCount} />
       <Toaster position="top-center" />
     </div>
   );

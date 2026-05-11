@@ -1,7 +1,7 @@
 'use client';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { Inbox, ListOrdered, Truck, Package, Landmark, Users, Settings } from 'lucide-react';
+import { Inbox, ListOrdered, Truck, Package, Landmark, Users, AlertTriangle } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
 const NAV_ITEMS = [
@@ -11,7 +11,7 @@ const NAV_ITEMS = [
   { href: '/products', label: '商品', icon: Package },
   { href: '/reconciliation', label: '對帳', icon: Landmark },
   { href: '/customers', label: '客戶', icon: Users },
-  { href: '/settings', label: '設定', icon: Settings },
+  { href: '/exceptions', label: '異常', icon: AlertTriangle },
 ];
 
 function useNavItems() {
@@ -22,7 +22,11 @@ function useNavItems() {
   }));
 }
 
-export function NavSidebar() {
+interface NavProps {
+  exceptionCount?: number;
+}
+
+export function NavSidebar({ exceptionCount = 0 }: NavProps) {
   const items = useNavItems();
   return (
     <nav
@@ -43,13 +47,18 @@ export function NavSidebar() {
         >
           <Icon className="h-4 w-4 shrink-0" aria-hidden />
           {label}
+          {href === '/exceptions' && exceptionCount > 0 && (
+            <span className="ml-auto flex h-5 min-w-5 items-center justify-center rounded-full bg-red-500 text-[10px] font-bold text-white px-1">
+              {exceptionCount > 99 ? '99+' : exceptionCount}
+            </span>
+          )}
         </Link>
       ))}
     </nav>
   );
 }
 
-export function NavBottom() {
+export function NavBottom({ exceptionCount = 0 }: NavProps) {
   const items = useNavItems();
   return (
     <nav
@@ -62,12 +71,17 @@ export function NavBottom() {
           href={href}
           aria-current={active ? 'page' : undefined}
           className={cn(
-            'flex flex-1 flex-col items-center justify-center gap-0.5 min-h-[44px]',
+            'relative flex flex-1 flex-col items-center justify-center gap-0.5 min-h-[44px]',
             active ? 'text-emerald-600' : 'text-zinc-500'
           )}
         >
           <Icon className="h-5 w-5" aria-hidden />
           <span className="text-[10px] font-medium leading-none">{label}</span>
+          {href === '/exceptions' && exceptionCount > 0 && (
+            <span className="absolute top-1 right-[calc(50%-14px)] flex h-4 min-w-4 items-center justify-center rounded-full bg-red-500 text-[9px] font-bold text-white px-0.5">
+              {exceptionCount > 9 ? '9+' : exceptionCount}
+            </span>
+          )}
         </Link>
       ))}
     </nav>
