@@ -1,3 +1,15 @@
+import { z } from 'zod';
+
+// LLMs occasionally emit "" instead of null for missing fields. PostgreSQL
+// rejects "" for typed columns like date; convert "" / whitespace to null.
+export const nullableTrimmedString = z
+  .union([z.string(), z.null()])
+  .transform((v) => {
+    if (v === null) return null;
+    const trimmed = v.trim();
+    return trimmed === '' ? null : trimmed;
+  });
+
 export interface ParsedOrderItem {
   product_id: string;
   product_display_name: string;

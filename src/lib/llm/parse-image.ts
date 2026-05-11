@@ -2,7 +2,7 @@ import 'server-only';
 import Anthropic from '@anthropic-ai/sdk';
 import { z } from 'zod';
 import type { Farmer, Product } from '@/lib/db/schema';
-import type { ParsedOrderDraft } from './types';
+import { nullableTrimmedString, type ParsedOrderDraft } from './types';
 import { buildSystemPromptForImage } from './prompts-image';
 
 const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
@@ -12,20 +12,30 @@ const llmItemSchema = z.object({
   quantity: z.number().int().positive(),
 });
 
+// image_quality drives confidence downscaling; if LLM omits / returns unknown
+// value, fall back to "unreadable" so confidence collapses and UX shows error.
+const imageQualitySchema = z.preprocess(
+  (v) => {
+    const allowed = ['clear', 'blurry', 'partial', 'unreadable'];
+    return typeof v === 'string' && allowed.includes(v) ? v : 'unreadable';
+  },
+  z.enum(['clear', 'blurry', 'partial', 'unreadable']),
+);
+
 const llmOutputSchema = z.object({
   items: z.array(llmItemSchema),
-  recipient_name: z.string().nullable(),
-  recipient_phone: z.string().nullable(),
-  recipient_address: z.string().nullable(),
-  delivery_zip: z.string().nullable(),
-  delivery_preference: z.string().nullable(),
-  desired_arrival_date: z.string().nullable(),
-  bank_last_5: z.string().nullable(),
-  notes: z.string().nullable(),
+  recipient_name: nullableTrimmedString,
+  recipient_phone: nullableTrimmedString,
+  recipient_address: nullableTrimmedString,
+  delivery_zip: nullableTrimmedString,
+  delivery_preference: nullableTrimmedString,
+  desired_arrival_date: nullableTrimmedString,
+  bank_last_5: nullableTrimmedString,
+  notes: nullableTrimmedString,
   confidence: z.number().min(0).max(1),
   ambiguities: z.array(z.string()),
-  image_quality: z.enum(['clear', 'blurry', 'partial', 'unreadable']),
-  ocr_text: z.string().nullable(),
+  image_quality: imageQualitySchema,
+  ocr_text: nullableTrimmedString,
 });
 
 const IMAGE_QUALITY_FACTOR: Record<string, number> = {

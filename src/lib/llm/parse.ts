@@ -2,7 +2,7 @@ import 'server-only';
 import Anthropic from '@anthropic-ai/sdk';
 import { z } from 'zod';
 import type { Farmer, Product } from '@/lib/db/schema';
-import type { ParsedOrderDraft } from './types';
+import { nullableTrimmedString, type ParsedOrderDraft } from './types';
 import { buildSystemPrompt } from './prompts';
 
 const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
@@ -15,14 +15,14 @@ const llmItemSchema = z.object({
 
 const llmOutputSchema = z.object({
   items: z.array(llmItemSchema),
-  recipient_name: z.string().nullable(),
-  recipient_phone: z.string().nullable(),
-  recipient_address: z.string().nullable(),
-  delivery_zip: z.string().nullable(),
-  delivery_preference: z.string().nullable(),
-  desired_arrival_date: z.string().nullable(),
-  bank_last_5: z.string().nullable(),
-  notes: z.string().nullable(),
+  recipient_name: nullableTrimmedString,
+  recipient_phone: nullableTrimmedString,
+  recipient_address: nullableTrimmedString,
+  delivery_zip: nullableTrimmedString,
+  delivery_preference: nullableTrimmedString,
+  desired_arrival_date: nullableTrimmedString,
+  bank_last_5: nullableTrimmedString,
+  notes: nullableTrimmedString,
   confidence: z.number().min(0).max(1),
   ambiguities: z.array(z.string()),
 });
