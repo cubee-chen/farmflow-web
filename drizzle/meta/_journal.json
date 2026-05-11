@@ -36,6 +36,13 @@
       "when": 1778483900254,
       "tag": "0004_p1_n1_line_push",
       "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1778485603363,
+      "tag": "0005_typical_beast",
+      "breakpoints": true
     }
   ]
 }

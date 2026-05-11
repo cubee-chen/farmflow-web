@@ -41,8 +41,8 @@ export async function proxy(request: NextRequest) {
     return supabaseResponse;
   }
 
-  // /api/health and other explicitly public API paths
-  if (pathname.startsWith('/api/health')) {
+  // Public API paths (no auth required)
+  if (pathname.startsWith('/api/health') || pathname.startsWith('/api/line-webhook/')) {
     return supabaseResponse;
   }
 

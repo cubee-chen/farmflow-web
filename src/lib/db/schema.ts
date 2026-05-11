@@ -295,3 +295,24 @@ export const notificationLogs = pgTable(
 
 export type NotificationLog = InferSelectModel<typeof notificationLogs>;
 export type NewNotificationLog = InferInsertModel<typeof notificationLogs>;
+
+export const lineWebhookEvents = pgTable(
+  'line_webhook_events',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    farmer_id: uuid('farmer_id').notNull().references(() => farmers.id),
+    event_type: text('event_type').notNull(),
+    source_user_id: text('source_user_id'),
+    raw_payload: jsonb('raw_payload').notNull(),
+    processing_status: text('processing_status').notNull().default('received'),
+    error_message: text('error_message'),
+    created_at: timestamp('created_at', { withTimezone: true }).defaultNow(),
+  },
+  (table) => [
+    index('line_webhook_events_farmer_id_created_at_idx').on(table.farmer_id, table.created_at.desc()),
+    index('line_webhook_events_processing_status_idx').on(table.processing_status),
+  ]
+);
+
+export type LineWebhookEvent = InferSelectModel<typeof lineWebhookEvents>;
+export type NewLineWebhookEvent = InferInsertModel<typeof lineWebhookEvents>;
