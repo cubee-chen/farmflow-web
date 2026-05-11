@@ -24,46 +24,48 @@ function itemSummary(items: { quantity: number; display_name: string }[]) {
 
 export function OrderCard({ order }: { order: OrderWithItems }) {
   return (
-    <Link href={`/orders/${order.id}`} className="block">
-      <Card className="hover:shadow-md transition-shadow">
-        <CardContent className="p-4 flex flex-col gap-1">
-          <div className="flex items-center justify-between gap-2">
-            <span className="font-mono text-sm font-semibold text-zinc-700">
-              {order.order_number ?? '（草稿）'}
-            </span>
-            <Badge className={STATUS_CLASS[order.status] ?? ''}>
-              {STATUS_LABEL[order.status] ?? order.status}
-            </Badge>
-          </div>
+    <Card className="relative hover:shadow-md transition-shadow">
+      <Link
+        href={`/orders/${order.id}`}
+        className="absolute inset-0"
+        aria-label={`訂單 ${order.order_number ?? '草稿'}`}
+      />
+      <CardContent className="p-4 flex flex-col gap-1">
+        <div className="flex items-center justify-between gap-2">
+          <span className="font-mono text-sm font-semibold text-zinc-700">
+            {order.order_number ?? '（草稿）'}
+          </span>
+          <Badge className={STATUS_CLASS[order.status] ?? ''}>
+            {STATUS_LABEL[order.status] ?? order.status}
+          </Badge>
+        </div>
 
-          <div className="text-sm text-zinc-700">
-            {order.recipient_name}
-            {order.recipient_phone && (
-              <>
-                {' ｜ '}
-                <a
-                  href={`tel:${order.recipient_phone}`}
-                  className="text-blue-600 underline-offset-2 hover:underline"
-                  onClick={(e) => e.stopPropagation()}
-                >
-                  {order.recipient_phone}
-                </a>
-              </>
-            )}
-          </div>
+        <div className="text-sm text-zinc-700">
+          {order.recipient_name}
+          {order.recipient_phone && (
+            <>
+              {' ｜ '}
+              <a
+                href={`tel:${order.recipient_phone}`}
+                className="relative z-10 text-blue-600 underline-offset-2 hover:underline"
+              >
+                {order.recipient_phone}
+              </a>
+            </>
+          )}
+        </div>
 
-          <div className="text-xs text-zinc-500 line-clamp-1">{itemSummary(order.items)}</div>
+        <div className="text-xs text-zinc-500 line-clamp-1">{itemSummary(order.items)}</div>
 
-          <div className="flex items-center justify-between mt-1">
-            <span className="font-bold text-sm">
-              NT${Number(order.total_amount).toLocaleString()}
-            </span>
-            {order.ship_date && (
-              <span className="text-xs text-zinc-500">出貨：{order.ship_date}</span>
-            )}
-          </div>
-        </CardContent>
-      </Card>
-    </Link>
+        <div className="flex items-center justify-between mt-1">
+          <span className="font-bold text-sm">
+            NT${Number(order.total_amount).toLocaleString()}
+          </span>
+          {order.ship_date && (
+            <span className="text-xs text-zinc-500">出貨：{order.ship_date}</span>
+          )}
+        </div>
+      </CardContent>
+    </Card>
   );
 }
