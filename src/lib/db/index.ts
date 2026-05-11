@@ -17,7 +17,22 @@ if (!process.env.DATABASE_URL) {
   } catch {}
 }
 
-const client = postgres(process.env.DATABASE_URL!, { ssl: 'require' });
+// Singleton pattern: Next.js HMR re-evaluates modules on every hot reload,
+// which would create a new postgres.js client (and a new connection pool) each
+// time — quickly exhausting Supabase's session-mode limit of 15 connections.
+// Storing the client on globalThis survives HMR and keeps exactly one pool.
+const g = globalThis as typeof globalThis & { _pgClient?: ReturnType<typeof postgres> };
+
+const client =
+  g._pgClient ??
+  postgres(process.env.DATABASE_URL!, {
+    ssl: 'require',
+    max: 5,           // leave headroom for Drizzle Studio, admin scripts, etc.
+    idle_timeout: 20, // release idle connections after 20 s
+    connect_timeout: 10,
+  });
+
+if (process.env.NODE_ENV !== 'production') g._pgClient = client;
 
 export const db = drizzle(client);
 export const sql = client;
