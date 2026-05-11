@@ -160,6 +160,14 @@ export interface OrderItemRow {
   subtotal: string;
 }
 
+export interface LatestLogData {
+  status: string;
+  trigger_event: string;
+  error_message: string | null;
+  sent_at: string | null;
+  created_at: string | null;
+}
+
 interface Props {
   order: Order;
   items: OrderItemRow[];
@@ -168,9 +176,11 @@ interface Props {
   notificationText: string;
   triggerEvent: 'confirmed' | 'paid' | 'shipped';
   customerLineUserId: string | null;
+  customerDisplayName: string | null;
+  latestLog: LatestLogData | null;
 }
 
-export function OrderDetailClient({ order, items, events, products, notificationText, triggerEvent, customerLineUserId }: Props) {
+export function OrderDetailClient({ order, items, events, products, notificationText, triggerEvent, customerLineUserId, customerDisplayName, latestLog }: Props) {
   const router = useRouter();
   const [isEditing, setIsEditing] = useState(false);
   const [showDelete, setShowDelete] = useState(false);
@@ -357,6 +367,8 @@ export function OrderDetailClient({ order, items, events, products, notification
         orderId={order.id}
         triggerEvent={triggerEvent}
         customerLineUserId={customerLineUserId}
+        customerDisplayName={customerDisplayName}
+        latestLog={latestLog}
       />
 
       {/* Section 5: Timeline */}

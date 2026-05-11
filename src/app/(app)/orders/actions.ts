@@ -6,6 +6,13 @@ import { db } from '@/lib/db';
 import { orders, orderItems, orderEvents, products } from '@/lib/db/schema';
 import { getCurrentFarmer, AuthError } from '@/lib/auth/get-current-farmer';
 import { orderDraftFormSchema, type OrderDraftFormData } from '@/lib/validation/order-draft';
+import { dispatchNotification } from '@/lib/notify/dispatch';
+
+const DISPATCH_EVENTS: Partial<Record<string, 'confirmed' | 'paid' | 'shipped'>> = {
+  confirm: 'confirmed',
+  pay: 'paid',
+  ship: 'shipped',
+};
 
 async function verifyOrder(orderId: string, farmerId: string) {
   const [row] = await db
@@ -147,6 +154,29 @@ export async function changeOrderStatus(
 
   revalidatePath(`/orders/${orderId}`);
   revalidatePath('/orders');
+
+  const triggerEvent = DISPATCH_EVENTS[action];
+  if (triggerEvent) {
+    dispatchNotification({ orderId, triggerEvent }).catch((err) =>
+      console.error('[notify] dispatch failed:', err)
+    );
+  }
+}
+
+export async function manualDispatchNotification(
+  orderId: string,
+  triggerEvent: 'confirmed' | 'paid' | 'shipped',
+): Promise<{ status: 'sent' | 'skipped' | 'failed'; reason?: string } | { error: string }> {
+  let farmer;
+  try { farmer = await getCurrentFarmer(); } catch (err) {
+    if (err instanceof AuthError) return { error: '請先登入' };
+    throw err;
+  }
+  if (!(await verifyOrder(orderId, farmer.id))) return { error: '訂單不存在或無權限' };
+
+  const result = await dispatchNotification({ orderId, triggerEvent });
+  revalidatePath(`/orders/${orderId}`);
+  return result;
 }
 
 export async function deleteOrder(orderId: string): Promise<{ error: string } | void> {

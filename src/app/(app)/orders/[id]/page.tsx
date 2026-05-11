@@ -1,7 +1,15 @@
 import { notFound } from 'next/navigation';
 import { and, desc, eq } from 'drizzle-orm';
 import { db } from '@/lib/db';
-import { orders, orderItems, orderEvents, products, notificationTemplates, customers } from '@/lib/db/schema';
+import {
+  orders,
+  orderItems,
+  orderEvents,
+  products,
+  notificationTemplates,
+  customers,
+  notificationLogs,
+} from '@/lib/db/schema';
 import { getCurrentFarmer } from '@/lib/auth/require-farmer';
 import { renderTemplate } from '@/lib/notification/render';
 import { OrderDetailClient } from './_components/order-detail-client';
@@ -38,7 +46,9 @@ export default async function OrderDetailPage({ params }: Props) {
 
   if (!order) notFound();
 
-  const [itemRows, eventRows, templateRows, productList, customerRow] = await Promise.all([
+  const triggerEvent = STATUS_TO_TRIGGER[order.status] as 'confirmed' | 'paid' | 'shipped' | undefined;
+
+  const [itemRows, eventRows, templateRows, productList, customerRow, latestLogRow] = await Promise.all([
     db
       .select({
         product_id: orderItems.product_id,
@@ -69,15 +79,59 @@ export default async function OrderDetailPage({ params }: Props) {
 
     order.customer_id
       ? db
-          .select({ line_user_id: customers.line_user_id })
+          .select({
+            line_user_id: customers.line_user_id,
+            line_display_name: customers.line_display_name,
+          })
           .from(customers)
           .where(eq(customers.id, order.customer_id))
           .limit(1)
       : Promise.resolve([]),
+
+    triggerEvent
+      ? db
+          .select({
+            status: notificationLogs.status,
+            trigger_event: notificationLogs.trigger_event,
+            error_message: notificationLogs.error_message,
+            sent_at: notificationLogs.sent_at,
+            created_at: notificationLogs.created_at,
+          })
+          .from(notificationLogs)
+          .where(
+            and(
+              eq(notificationLogs.order_id, id),
+              eq(notificationLogs.trigger_event, triggerEvent)
+            )
+          )
+          .orderBy(desc(notificationLogs.created_at))
+          .limit(1)
+      : Promise.resolve([]),
   ]);
 
-  const customerLineUserId = (customerRow as { line_user_id: string | null }[])[0]?.line_user_id ?? null;
-  const triggerEvent = STATUS_TO_TRIGGER[order.status] as 'confirmed' | 'paid' | 'shipped' | undefined;
+  type CustomerRow = { line_user_id: string | null; line_display_name: string | null };
+  const customer = (customerRow as CustomerRow[])[0] ?? null;
+  const customerLineUserId = customer?.line_user_id ?? null;
+  const customerDisplayName = customer?.line_display_name ?? null;
+
+  type RawLog = {
+    status: string;
+    trigger_event: string;
+    error_message: string | null;
+    sent_at: Date | null;
+    created_at: Date | null;
+  };
+  const rawLog = (latestLogRow as RawLog[])[0] ?? null;
+  const latestLog = rawLog
+    ? {
+        status: rawLog.status,
+        trigger_event: rawLog.trigger_event,
+        error_message: rawLog.error_message,
+        sent_at: rawLog.sent_at?.toISOString() ?? null,
+        created_at: rawLog.created_at?.toISOString() ?? null,
+      }
+    : null;
+
   const matchedTemplate = templateRows.find((t) => t.trigger_event === triggerEvent)
     ?? templateRows[0]
     ?? null;
@@ -109,6 +163,8 @@ export default async function OrderDetailPage({ params }: Props) {
       notificationText={notificationText}
       triggerEvent={triggerEvent ?? 'confirmed'}
       customerLineUserId={customerLineUserId}
+      customerDisplayName={customerDisplayName}
+      latestLog={latestLog}
     />
   );
 }
