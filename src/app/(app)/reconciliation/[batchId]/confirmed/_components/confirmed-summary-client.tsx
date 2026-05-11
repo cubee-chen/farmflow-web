@@ -1,44 +1,60 @@
 'use client';
 import Link from 'next/link';
-import { useQuery } from '@tanstack/react-query';
-import { CheckCircle2 } from 'lucide-react';
+import { useState } from 'react';
+import { CheckCircle2, Copy, Check } from 'lucide-react';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 
-interface MatchRow {
-  id: string;
-  matchStatus: string;
-  orderId: string | null;
-  order: {
-    orderNumber: string | null;
-    recipientName: string;
-    totalAmount: string;
-  } | null;
-  tx: { amount: string; txDate: string };
-}
-
-interface BatchDetail {
-  batch: { id: string; status: string; uploadedFilename: string | null };
-  matches: MatchRow[];
+interface ConfirmedOrder {
+  matchId: string;
+  orderId: string;
+  orderNumber: string | null;
+  recipientName: string;
+  txAmount: string;
+  txDate: string;
+  notificationText: string;
 }
 
 function fmt(amount: string) {
   return `NT$${Number(amount).toLocaleString()}`;
 }
 
-export function ConfirmedSummaryClient({ batchId }: { batchId: string }) {
-  const { data, isLoading } = useQuery<BatchDetail>({
-    queryKey: ['reconciliation', 'batch', batchId],
-    queryFn: () => fetch(`/api/reconciliation/${batchId}`).then((r) => r.json()),
-  });
+function CopyButton({ text }: { text: string }) {
+  const [copied, setCopied] = useState(false);
 
-  if (isLoading) return <p className="text-sm text-zinc-400">載入中…</p>;
-  if (!data) return <p className="text-sm text-zinc-400">載入失敗，請重新整理</p>;
+  async function handleCopy() {
+    await navigator.clipboard.writeText(text);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+  }
 
-  const confirmedRows = data.matches.filter(
-    (m) => (m.matchStatus === 'matched' || m.matchStatus === 'manual_override') && m.orderId
+  return (
+    <Button
+      size="sm"
+      variant="outline"
+      className="text-xs h-7 shrink-0"
+      onClick={handleCopy}
+    >
+      {copied ? (
+        <>
+          <Check className="h-3 w-3 mr-1 text-green-600" />
+          已複製
+        </>
+      ) : (
+        <>
+          <Copy className="h-3 w-3 mr-1" />
+          複製收款通知
+        </>
+      )}
+    </Button>
   );
+}
 
+export function ConfirmedSummaryClient({
+  confirmedOrders,
+}: {
+  confirmedOrders: ConfirmedOrder[];
+}) {
   return (
     <div className="space-y-6 max-w-lg">
       {/* Banner */}
@@ -46,43 +62,39 @@ export function ConfirmedSummaryClient({ batchId }: { batchId: string }) {
         <CheckCircle2 className="h-8 w-8 text-green-600 shrink-0" />
         <div>
           <p className="font-semibold text-green-800">
-            已將 {confirmedRows.length} 筆訂單標為已付款
+            已確認 {confirmedOrders.length} 筆訂單為已付款
           </p>
-          <p className="text-sm text-green-700 mt-0.5">記得通知客戶付款已收到</p>
+          <p className="text-sm text-green-700 mt-0.5">可複製下方通知文案，透過 LINE 傳送給客戶</p>
         </div>
       </div>
 
       {/* Order list */}
       <div className="space-y-2">
-        {confirmedRows.map((m) => (
-          <Card key={m.id}>
+        {confirmedOrders.map((o) => (
+          <Card key={o.matchId}>
             <CardContent className="p-3 flex items-center justify-between gap-3">
               <div className="min-w-0">
-                <p className="text-sm font-medium text-zinc-800">{m.order?.recipientName}</p>
+                <p className="text-sm font-medium text-zinc-800">{o.recipientName}</p>
                 <p className="text-xs text-zinc-400 font-mono mt-0.5">
-                  {m.order?.orderNumber ?? '—'} · {m.tx.txDate}
+                  {o.orderNumber ?? '—'} · {o.txDate} · {fmt(o.txAmount)}
                 </p>
               </div>
-              <div className="flex items-center gap-3 shrink-0">
-                <span className="text-sm font-semibold text-zinc-700">
-                  {fmt(m.tx.amount)}
-                </span>
-                {m.orderId && (
-                  <Link href={`/orders/${m.orderId}`}>
-                    <Button size="sm" variant="outline" className="text-xs h-7">
-                      查看訂單
-                    </Button>
-                  </Link>
-                )}
+              <div className="flex items-center gap-2 shrink-0">
+                <Link href={`/orders/${o.orderId}`}>
+                  <Button size="sm" variant="ghost" className="text-xs h-7">
+                    訂單
+                  </Button>
+                </Link>
+                <CopyButton text={o.notificationText} />
               </div>
             </CardContent>
           </Card>
         ))}
       </div>
 
-      <div className="flex gap-3">
+      <div className="flex gap-3 pt-2">
         <Link href="/reconciliation">
-          <Button variant="outline">返回對帳列表</Button>
+          <Button variant="outline">回對帳列表</Button>
         </Link>
         <Link href="/orders">
           <Button>前往訂單管理</Button>

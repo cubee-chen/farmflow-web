@@ -17,6 +17,7 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { cn } from '@/lib/utils';
+import { subDays } from 'date-fns';
 
 type BatchSummary = {
   id: string;
@@ -83,8 +84,28 @@ export function ReconciliationClient() {
     if (selectedFile) uploadMutation.mutate(selectedFile);
   }
 
+  const sevenDaysAgo = subDays(new Date(), 7);
+  const pendingBatches = batches.filter(
+    (b) => b.status === 'draft' && new Date(b.createdAt) >= sevenDaysAgo
+  );
+
   return (
     <div className="space-y-6">
+      {/* Draft batch banner */}
+      {pendingBatches.length > 0 && (
+        <div className="flex items-center justify-between gap-3 rounded-lg bg-yellow-50 border border-yellow-200 px-4 py-3 text-sm">
+          <p className="text-yellow-800">
+            您有 <strong>{pendingBatches.length}</strong> 個未確認的對帳批次
+          </p>
+          <a
+            href={`/reconciliation/${pendingBatches[0].id}`}
+            className="shrink-0 text-yellow-700 font-medium underline underline-offset-2 hover:text-yellow-900"
+          >
+            前往處理
+          </a>
+        </div>
+      )}
+
       {/* Upload card */}
       <Card>
         <CardContent className="p-4 space-y-4">

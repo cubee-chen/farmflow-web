@@ -7,6 +7,7 @@ import {
   orders,
   orderEvents,
 } from '@/lib/db/schema';
+import { dispatchNotification } from '@/lib/notify/dispatch';
 
 export interface ConfirmResult {
   confirmedCount: number;
@@ -83,7 +84,9 @@ export async function confirmReconciliationBatch(
       .where(eq(bankReconciliationBatches.id, batchId));
   });
 
-  // TODO: dispatch LINE push notifications for each paid order when N-series is implemented
+  for (const orderId of orderIds) {
+    await dispatchNotification({ orderId, triggerEvent: 'paid' });
+  }
 
   return { confirmedCount: orderIds.length, orderIds };
 }
