@@ -44,12 +44,34 @@ function InfoRow({ label, children }: { label: string; children: React.ReactNode
   );
 }
 
+interface LineHistoryItem {
+  id: string;
+  raw_payload: unknown;
+  created_at: Date | string | null;
+}
+
 interface Props {
   customer: Customer;
   orders: Pick<Order, 'id' | 'order_number' | 'status' | 'total_amount' | 'created_at'>[];
+  lineHistory: LineHistoryItem[];
 }
 
-export function CustomerDetailClient({ customer, orders }: Props) {
+function previewLineMessage(payload: unknown): string {
+  if (!payload || typeof payload !== 'object') return '（無法解析）';
+  const p = payload as Record<string, unknown>;
+  const msg = p.message as Record<string, unknown> | undefined;
+  if (!msg) return `（事件：${String(p.type ?? 'unknown')}）`;
+  const type = msg.type as string | undefined;
+  if (type === 'text') return String(msg.text ?? '');
+  if (type === 'image') return '[圖片]';
+  if (type === 'sticker') return '[貼圖]';
+  if (type === 'video') return '[影片]';
+  if (type === 'audio') return '[語音]';
+  if (type === 'location') return '[位置]';
+  return `[${type ?? 'unknown'}]`;
+}
+
+export function CustomerDetailClient({ customer, orders, lineHistory }: Props) {
   const router = useRouter();
   const [linkOpen, setLinkOpen] = useState(false);
   const [inputUserId, setInputUserId] = useState('');
@@ -163,6 +185,27 @@ export function CustomerDetailClient({ customer, orders }: Props) {
         </CardContent>
       </Card>
 
+      {/* LINE conversation history */}
+      {customer.line_user_id && lineHistory.length > 0 && (
+        <Card>
+          <CardHeader className="px-4 pt-4 pb-2">
+            <CardTitle className="text-sm">LINE 對話紀錄（最近 {lineHistory.length} 筆）</CardTitle>
+          </CardHeader>
+          <CardContent className="px-4 pb-4 space-y-2">
+            {lineHistory.map((ev) => (
+              <div key={ev.id} className="text-sm border-l-2 border-zinc-200 pl-2">
+                <p className="text-xs text-zinc-400">
+                  {ev.created_at ? new Date(ev.created_at).toLocaleString('zh-TW') : ''}
+                </p>
+                <p className="text-zinc-700 line-clamp-2">
+                  {previewLineMessage(ev.raw_payload)}
+                </p>
+              </div>
+            ))}
+          </CardContent>
+        </Card>
+      )}
+
       {/* Order history */}
       <Card>
         <CardHeader className="px-4 pt-4 pb-2">
@@ -196,6 +239,13 @@ export function CustomerDetailClient({ customer, orders }: Props) {
           )}
         </CardContent>
       </Card>
+
+      {/* Advanced actions */}
+      <div className="pt-2">
+        <Button variant="outline" size="sm" asChild>
+          <Link href={`/customers/${customer.id}/merge`}>合併到其他客戶…</Link>
+        </Button>
+      </div>
 
       {/* Link dialog */}
       <Dialog open={linkOpen} onOpenChange={setLinkOpen}>

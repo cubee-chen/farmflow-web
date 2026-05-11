@@ -14,6 +14,8 @@ import { parseOrderFromImages } from '@/lib/llm/parse-image';
 import { parseOrderText } from '@/lib/llm/parse';
 import type { ParsedOrderDraft } from '@/lib/llm/types';
 import { createServiceSupabase } from '@/lib/supabase/server';
+import { fetchLineProfile } from './line-profile';
+import { linkLineUserToCustomer } from '@/lib/notify/link-customer';
 
 // ── LINE event types ────────────────────────────────────────────────────────────
 
@@ -28,6 +30,7 @@ interface LineSource {
 
 interface PendingGroup {
   storagePaths: string[];
+  customerId: string | null;
   timer: ReturnType<typeof setTimeout>;
 }
 
@@ -53,6 +56,36 @@ function formatErrorWithCause(err: unknown): string {
     parts.push(`Cause: ${String(cause)}`);
   }
   return parts.join('\n');
+}
+
+// Resolve LINE userId → customer.id. Fast path: existing binding. Slow path:
+// fetch Profile API for displayName and delegate to linkLineUserToCustomer
+// (which covers phone match, fuzzy match by displayName, and insert).
+async function ensureLineUserLinked(
+  farmer: Farmer,
+  userId: string,
+): Promise<string> {
+  const [existing] = await db
+    .select({ id: customers.id })
+    .from(customers)
+    .where(and(eq(customers.farmer_id, farmer.id), eq(customers.line_user_id, userId)))
+    .limit(1);
+
+  if (existing) return existing.id;
+
+  let displayName: string | null = null;
+  if (farmer.line_channel_access_token) {
+    const profile = await fetchLineProfile(userId, farmer.line_channel_access_token);
+    displayName = profile.displayName;
+  }
+
+  const result = await linkLineUserToCustomer({
+    farmerId: farmer.id,
+    lineUserId: userId,
+    displayName: displayName ?? undefined,
+  });
+
+  return result.customerId;
 }
 
 async function downloadLineImage(messageId: string, token: string): Promise<Buffer> {
@@ -99,9 +132,9 @@ async function createDraftOrder(params: {
   rawText: string | null;
   rawImageUrls: string[] | null;
   imageQuality: string | null;
-  sourceUserId: string | null;
+  customerId: string | null;
 }): Promise<void> {
-  const { farmerId, draft, rawText, rawImageUrls, imageQuality, sourceUserId } = params;
+  const { farmerId, draft, rawText, rawImageUrls, imageQuality, customerId } = params;
 
   const dbProducts = await db
     .select({ id: products.id, price: products.price })
@@ -115,24 +148,22 @@ async function createDraftOrder(params: {
     0,
   );
 
-  // Attempt to link known customer via LINE userId
-  let linkedCustomerId: string | null = null;
+  // Customer is resolved upstream by ensureLineUserLinked. Pull defaults to
+  // fill missing recipient info from parser output.
   let recipientPhone = draft.recipient_phone ?? '';
   let recipientName = draft.recipient_name ?? '';
 
-  if (sourceUserId) {
+  if (customerId) {
     const [linked] = await db
       .select({
-        id: customers.id,
         primary_phone: customers.primary_phone,
         default_name: customers.default_name,
       })
       .from(customers)
-      .where(and(eq(customers.farmer_id, farmerId), eq(customers.line_user_id, sourceUserId)))
+      .where(eq(customers.id, customerId))
       .limit(1);
 
     if (linked) {
-      linkedCustomerId = linked.id;
       if (!recipientPhone) recipientPhone = linked.primary_phone;
       if (!recipientName) recipientName = linked.default_name ?? '';
     }
@@ -145,7 +176,7 @@ async function createDraftOrder(params: {
       .insert(orders)
       .values({
         farmer_id: farmerId,
-        customer_id: linkedCustomerId ?? undefined,
+        customer_id: customerId ?? undefined,
         order_number: orderNumber,
         intake_mode: 'line_webhook',
         raw_text: rawText,
@@ -192,7 +223,7 @@ async function createDraftOrder(params: {
 async function triggerImageGroupParsing(
   storagePaths: string[],
   farmer: Farmer,
-  sourceUserId: string | null,
+  customerId: string | null,
 ): Promise<void> {
   const supabase = createServiceSupabase();
 
@@ -222,7 +253,7 @@ async function triggerImageGroupParsing(
     rawText: null,
     rawImageUrls: storagePaths,
     imageQuality: draft.image_quality ?? null,
-    sourceUserId,
+    customerId,
   });
 }
 
@@ -250,6 +281,11 @@ export async function processLineEvent(
   const messageType = message?.type as string | undefined;
 
   try {
+    // Resolve customer up front so text and image flows share the same binding.
+    const customerId = sourceUserId
+      ? await ensureLineUserLinked(farmer, sourceUserId)
+      : null;
+
     if (messageType === 'text') {
       const rawText = message?.text as string ?? '';
       const farmerProducts = await db
@@ -265,7 +301,7 @@ export async function processLineEvent(
         rawText,
         rawImageUrls: null,
         imageQuality: null,
-        sourceUserId,
+        customerId,
       });
 
       await db
@@ -290,15 +326,16 @@ export async function processLineEvent(
       }
 
       const storagePaths = existing ? existing.storagePaths : [storagePath];
+      const groupCustomerId = existing ? existing.customerId : customerId;
 
       const timer = setTimeout(() => {
         pendingGroups.delete(groupKey);
-        triggerImageGroupParsing(storagePaths, farmer, sourceUserId).catch((err) =>
+        triggerImageGroupParsing(storagePaths, farmer, groupCustomerId).catch((err) =>
           console.error('[webhook] image group parse failed:', err),
         );
       }, GROUP_TIMEOUT_MS);
 
-      pendingGroups.set(groupKey, { storagePaths, timer });
+      pendingGroups.set(groupKey, { storagePaths, customerId: groupCustomerId, timer });
 
       await db
         .update(lineWebhookEvents)

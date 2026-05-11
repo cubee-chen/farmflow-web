@@ -88,15 +88,15 @@ export function CustomersClient({ customers }: Props) {
         </div>
       )}
 
-      {/* Merge placeholder */}
+      {/* Merge entry point lives on the customer detail page since it needs a source customer */}
       <div className="pt-2">
         <Button
           variant="outline"
           size="sm"
           className="text-zinc-500"
-          onClick={() => toast.info('合併客戶功能 P2 開發中')}
+          onClick={() => toast.info('請進入客戶詳情頁，從「合併到其他客戶」啟動合併')}
         >
-          合併客戶（進行中）
+          合併客戶
         </Button>
       </div>
     </div>

@@ -1,7 +1,7 @@
 import { notFound } from 'next/navigation';
 import { and, desc, eq } from 'drizzle-orm';
 import { db } from '@/lib/db';
-import { customers, orders } from '@/lib/db/schema';
+import { customers, lineWebhookEvents, orders } from '@/lib/db/schema';
 import { getCurrentFarmer } from '@/lib/auth/require-farmer';
 import { CustomerDetailClient } from './_components/customer-detail-client';
 
@@ -34,5 +34,23 @@ export default async function CustomerDetailPage({ params }: Props) {
     .orderBy(desc(orders.created_at))
     .limit(50);
 
-  return <CustomerDetailClient customer={customer} orders={orderList} />;
+  const lineHistory = customer.line_user_id
+    ? await db
+        .select({
+          id: lineWebhookEvents.id,
+          raw_payload: lineWebhookEvents.raw_payload,
+          created_at: lineWebhookEvents.created_at,
+        })
+        .from(lineWebhookEvents)
+        .where(
+          and(
+            eq(lineWebhookEvents.farmer_id, farmer.id),
+            eq(lineWebhookEvents.source_user_id, customer.line_user_id),
+          ),
+        )
+        .orderBy(desc(lineWebhookEvents.created_at))
+        .limit(10)
+    : [];
+
+  return <CustomerDetailClient customer={customer} orders={orderList} lineHistory={lineHistory} />;
 }

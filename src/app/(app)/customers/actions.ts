@@ -1,8 +1,8 @@
 'use server';
 
-import { and, eq } from 'drizzle-orm';
+import { and, eq, inArray, sql } from 'drizzle-orm';
 import { db } from '@/lib/db';
-import { customers } from '@/lib/db/schema';
+import { customers, orders } from '@/lib/db/schema';
 import { getCurrentFarmer } from '@/lib/auth/require-farmer';
 import { linkLineUserToCustomer } from '@/lib/notify/link-customer';
 
@@ -53,4 +53,57 @@ export async function linkLineByPhone(params: {
   if (farmer.id !== params.farmerId) return { error: 'Unauthorized' };
 
   return linkLineUserToCustomer(params);
+}
+
+export async function mergeCustomers(
+  sourceId: string,
+  targetId: string
+): Promise<{ success: true; targetId: string } | { error: string }> {
+  if (sourceId === targetId) return { error: '來源與目標相同' };
+
+  const farmer = await getCurrentFarmer();
+
+  // Both customers must belong to the current farmer (cross-farmer isolation)
+  const both = await db
+    .select({ id: customers.id })
+    .from(customers)
+    .where(
+      and(
+        eq(customers.farmer_id, farmer.id),
+        inArray(customers.id, [sourceId, targetId])
+      )
+    );
+
+  if (both.length !== 2) return { error: '找不到客戶（或不屬於你）' };
+
+  await db.transaction(async (tx) => {
+    // Move every order from source to target (farmer scope enforced again as defence)
+    await tx
+      .update(orders)
+      .set({ customer_id: targetId })
+      .where(and(eq(orders.customer_id, sourceId), eq(orders.farmer_id, farmer.id)));
+
+    // Recompute target aggregates from orders so denormalised totals stay correct
+    const [agg] = await tx
+      .select({
+        count: sql<number>`cast(count(*) as integer)`,
+        sum: sql<string>`coalesce(sum(${orders.total_amount}), '0')`,
+        last: sql<Date | null>`max(${orders.created_at})`,
+      })
+      .from(orders)
+      .where(eq(orders.customer_id, targetId));
+
+    await tx
+      .update(customers)
+      .set({
+        total_orders: agg.count,
+        total_amount: agg.sum,
+        last_ordered_at: agg.last,
+      })
+      .where(eq(customers.id, targetId));
+
+    await tx.delete(customers).where(eq(customers.id, sourceId));
+  });
+
+  return { success: true, targetId };
 }
