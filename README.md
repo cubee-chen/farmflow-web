@@ -41,6 +41,23 @@ pnpm dev
 
 Vercel 部署：到 **Settings → Environment Variables** 貼上以上變數，三個環境（Production / Preview / Development）都勾選。
 
+## Auth Seed
+
+首次部署後執行一次：
+
+```bash
+pnpm migrate:seed-auth
+```
+
+腳本會為 `scripts/migrate-seed-auth.ts` 中定義的種子農友建立 Supabase Auth 帳號，並將 `farmers.auth_user_id` 填入。已建立的帳號會自動跳過（冪等）。
+
+若重置 DB（`pnpm db:seed`），需重新執行：
+
+```bash
+pnpm db:seed          # 清空並重建 farmers / products 等資料
+pnpm migrate:seed-auth  # 補回 auth_user_id 對應關係
+```
+
 開啟 [http://localhost:3000](http://localhost:3000)
 
 ## 行動裝置加入主畫面

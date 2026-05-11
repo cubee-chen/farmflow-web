@@ -12,7 +12,8 @@
     "db:migrate": "node --env-file=.env.local node_modules/drizzle-kit/bin.cjs migrate",
     "db:push": "node --env-file=.env.local node_modules/drizzle-kit/bin.cjs push",
     "db:studio": "node --env-file=.env.local node_modules/drizzle-kit/bin.cjs studio",
-    "db:seed": "tsx scripts/seed.ts"
+    "db:seed": "tsx scripts/seed.ts",
+    "migrate:seed-auth": "tsx scripts/migrate-seed-auth.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.95.0",
