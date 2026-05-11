@@ -11,7 +11,7 @@ import {
   index,
   uniqueIndex,
 } from "drizzle-orm/pg-core";
-import type { InferSelectModel, InferInsertModel } from "drizzle-orm";
+import { sql, type InferSelectModel, type InferInsertModel } from "drizzle-orm";
 
 export const farmers = pgTable("farmers", {
   id: uuid("id").primaryKey().defaultRandom(),
@@ -317,3 +317,28 @@ export const lineWebhookEvents = pgTable(
 
 export type LineWebhookEvent = InferSelectModel<typeof lineWebhookEvents>;
 export type NewLineWebhookEvent = InferInsertModel<typeof lineWebhookEvents>;
+
+export const pendingImageGroups = pgTable(
+  'pending_image_groups',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    farmer_id: uuid('farmer_id').notNull().references(() => farmers.id),
+    source_user_id: text('source_user_id').notNull(),
+    image_storage_paths: text('image_storage_paths').array().notNull().default(sql`ARRAY[]::text[]`),
+    line_message_ids: text('line_message_ids').array().notNull().default(sql`ARRAY[]::text[]`),
+    first_received_at: timestamp('first_received_at', { withTimezone: true }).notNull().defaultNow(),
+    last_received_at: timestamp('last_received_at', { withTimezone: true }).notNull().defaultNow(),
+    status: text('status').notNull().default('pending'),
+    processed_order_id: uuid('processed_order_id').references(() => orders.id, { onDelete: 'set null' }),
+    processing_error: text('processing_error'),
+  },
+  (table) => [
+    // Only one pending group per (farmer, user) at a time; processed rows stay around as history.
+    uniqueIndex('pending_image_groups_active_idx')
+      .on(table.farmer_id, table.source_user_id)
+      .where(sql`status = 'pending'`),
+  ]
+);
+
+export type PendingImageGroup = InferSelectModel<typeof pendingImageGroups>;
+export type NewPendingImageGroup = InferInsertModel<typeof pendingImageGroups>;

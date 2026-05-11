@@ -7,6 +7,7 @@ import {
   orderEvents,
   orderItems,
   orders,
+  pendingImageGroups,
   products,
   type Farmer,
 } from '@/lib/db/schema';
@@ -24,17 +25,8 @@ interface LineSource {
   userId?: string;
 }
 
-// ── In-memory image group ───────────────────────────────────────────────────────
-// NOTE: works when Vercel Fluid Compute reuses the same instance.
-// P2 will replace with a DB-backed pending_image_groups table.
-
-interface PendingGroup {
-  storagePaths: string[];
-  customerId: string | null;
-  timer: ReturnType<typeof setTimeout>;
-}
-
-const pendingGroups = new Map<string, PendingGroup>();
+// Image group window: 30s of no new image flushes the group as one order.
+// State lives in pending_image_groups so we survive function instance churn.
 const GROUP_TIMEOUT_MS = 30_000;
 
 // ── Helpers ─────────────────────────────────────────────────────────────────────
@@ -61,7 +53,7 @@ function formatErrorWithCause(err: unknown): string {
 // Resolve LINE userId → customer.id. Fast path: existing binding. Slow path:
 // fetch Profile API for displayName and delegate to linkLineUserToCustomer
 // (which covers phone match, fuzzy match by displayName, and insert).
-async function ensureLineUserLinked(
+export async function ensureLineUserLinked(
   farmer: Farmer,
   userId: string,
 ): Promise<string> {
@@ -133,7 +125,7 @@ async function createDraftOrder(params: {
   rawImageUrls: string[] | null;
   imageQuality: string | null;
   customerId: string | null;
-}): Promise<void> {
+}): Promise<string> {
   const { farmerId, draft, rawText, rawImageUrls, imageQuality, customerId } = params;
 
   const dbProducts = await db
@@ -169,7 +161,7 @@ async function createDraftOrder(params: {
     }
   }
 
-  await db.transaction(async (tx) => {
+  return db.transaction(async (tx) => {
     const orderNumber = await generateOrderNumber(tx, farmerId);
 
     const [newOrder] = await tx
@@ -227,46 +219,160 @@ async function createDraftOrder(params: {
         })
         .where(eq(customers.id, customerId));
     }
+
+    return newOrder.id;
   });
 }
 
-// ── Image group trigger ─────────────────────────────────────────────────────────
+// ── Image group: DB-backed grouping with 30s flush window ───────────────────────
 
-async function triggerImageGroupParsing(
-  storagePaths: string[],
+// Append a path to the active pending group for (farmer, user) or create one.
+// Partial unique index on (farmer_id, source_user_id) WHERE status='pending'
+// guarantees at most one active group; a concurrent INSERT race retries as UPDATE.
+async function upsertPendingGroup(
+  farmerId: string,
+  sourceUserId: string,
+  storagePath: string,
+  messageId: string,
+): Promise<string> {
+  const [existing] = await db
+    .select({ id: pendingImageGroups.id })
+    .from(pendingImageGroups)
+    .where(
+      and(
+        eq(pendingImageGroups.farmer_id, farmerId),
+        eq(pendingImageGroups.source_user_id, sourceUserId),
+        eq(pendingImageGroups.status, 'pending'),
+      ),
+    )
+    .limit(1);
+
+  if (existing) {
+    await db
+      .update(pendingImageGroups)
+      .set({
+        image_storage_paths: sql`array_append(${pendingImageGroups.image_storage_paths}, ${storagePath})`,
+        line_message_ids: sql`array_append(${pendingImageGroups.line_message_ids}, ${messageId})`,
+        last_received_at: new Date(),
+      })
+      .where(eq(pendingImageGroups.id, existing.id));
+    return existing.id;
+  }
+
+  try {
+    const [created] = await db
+      .insert(pendingImageGroups)
+      .values({
+        farmer_id: farmerId,
+        source_user_id: sourceUserId,
+        image_storage_paths: [storagePath],
+        line_message_ids: [messageId],
+      })
+      .returning({ id: pendingImageGroups.id });
+    return created.id;
+  } catch (err) {
+    const code = (err as { cause?: { code?: string } }).cause?.code;
+    if (code !== '23505') throw err;
+
+    // Lost a race with a concurrent insert — append to whatever row won.
+    const [retry] = await db
+      .update(pendingImageGroups)
+      .set({
+        image_storage_paths: sql`array_append(${pendingImageGroups.image_storage_paths}, ${storagePath})`,
+        line_message_ids: sql`array_append(${pendingImageGroups.line_message_ids}, ${messageId})`,
+        last_received_at: new Date(),
+      })
+      .where(
+        and(
+          eq(pendingImageGroups.farmer_id, farmerId),
+          eq(pendingImageGroups.source_user_id, sourceUserId),
+          eq(pendingImageGroups.status, 'pending'),
+        ),
+      )
+      .returning({ id: pendingImageGroups.id });
+    return retry.id;
+  }
+}
+
+// Try to flush a group: skip if still actively receiving, otherwise atomically
+// claim it (UPDATE…WHERE status='pending') and run parser + draft creation.
+export async function processGroupIfReady(
+  groupId: string,
   farmer: Farmer,
   customerId: string | null,
 ): Promise<void> {
-  const supabase = createServiceSupabase();
-
-  const images: { mimeType: string; base64: string }[] = [];
-  for (const path of storagePaths) {
-    const { data, error } = await supabase.storage.from('intake-images').download(path);
-    if (error || !data) {
-      console.error('[webhook] storage download failed:', path, error?.message);
-      continue;
-    }
-    const buf = Buffer.from(await data.arrayBuffer());
-    images.push({ mimeType: 'image/jpeg', base64: buf.toString('base64') });
-  }
-
-  if (images.length === 0) return;
-
-  const farmerProducts = await db
+  const [group] = await db
     .select()
-    .from(products)
-    .where(eq(products.farmer_id, farmer.id));
+    .from(pendingImageGroups)
+    .where(eq(pendingImageGroups.id, groupId))
+    .limit(1);
 
-  const draft = await parseOrderFromImages(images, farmer, farmerProducts);
+  if (!group || group.status !== 'pending') return;
 
-  await createDraftOrder({
-    farmerId: farmer.id,
-    draft,
-    rawText: null,
-    rawImageUrls: storagePaths,
-    imageQuality: draft.image_quality ?? null,
-    customerId,
-  });
+  const ageMs = Date.now() - new Date(group.last_received_at).getTime();
+  if (ageMs < GROUP_TIMEOUT_MS - 500) return; // a later timer will fire
+
+  // Atomic claim: only one fire wins the UPDATE, others get no rows back.
+  const [claimed] = await db
+    .update(pendingImageGroups)
+    .set({ status: 'processed' })
+    .where(and(eq(pendingImageGroups.id, groupId), eq(pendingImageGroups.status, 'pending')))
+    .returning({
+      id: pendingImageGroups.id,
+      image_storage_paths: pendingImageGroups.image_storage_paths,
+    });
+
+  if (!claimed) return;
+
+  try {
+    const supabase = createServiceSupabase();
+    const images: { mimeType: string; base64: string }[] = [];
+    for (const path of claimed.image_storage_paths) {
+      const { data, error } = await supabase.storage.from('intake-images').download(path);
+      if (error || !data) {
+        console.error('[webhook] storage download failed:', path, error?.message);
+        continue;
+      }
+      const buf = Buffer.from(await data.arrayBuffer());
+      images.push({ mimeType: 'image/jpeg', base64: buf.toString('base64') });
+    }
+
+    if (images.length === 0) {
+      await db
+        .update(pendingImageGroups)
+        .set({ processing_error: 'no images downloadable' })
+        .where(eq(pendingImageGroups.id, groupId));
+      return;
+    }
+
+    const farmerProducts = await db
+      .select()
+      .from(products)
+      .where(eq(products.farmer_id, farmer.id));
+
+    const draft = await parseOrderFromImages(images, farmer, farmerProducts);
+
+    const orderId = await createDraftOrder({
+      farmerId: farmer.id,
+      draft,
+      rawText: null,
+      rawImageUrls: claimed.image_storage_paths,
+      imageQuality: draft.image_quality ?? null,
+      customerId,
+    });
+
+    await db
+      .update(pendingImageGroups)
+      .set({ processed_order_id: orderId })
+      .where(eq(pendingImageGroups.id, groupId));
+  } catch (err) {
+    const msg = formatErrorWithCause(err);
+    console.error('[webhook] group processing failed:', msg);
+    await db
+      .update(pendingImageGroups)
+      .set({ processing_error: msg })
+      .where(eq(pendingImageGroups.id, groupId));
+  }
 }
 
 // ── Main export ─────────────────────────────────────────────────────────────────
@@ -324,30 +430,22 @@ export async function processLineEvent(
     } else if (messageType === 'image') {
       const messageId = message?.id as string | undefined;
       if (!messageId) throw new Error('missing messageId');
+      if (!sourceUserId) throw new Error('image message without sourceUserId');
       if (!farmer.line_channel_access_token) throw new Error('no channel_access_token configured');
 
       const buf = await downloadLineImage(messageId, farmer.line_channel_access_token);
       const storagePath = await uploadToStorage(buf, farmer.id, messageId);
 
-      const groupKey = `${farmer.id}:${sourceUserId ?? 'anon'}`;
-      const existing = pendingGroups.get(groupKey);
+      const groupId = await upsertPendingGroup(farmer.id, sourceUserId, storagePath, messageId);
 
-      if (existing) {
-        clearTimeout(existing.timer);
-        existing.storagePaths.push(storagePath);
-      }
-
-      const storagePaths = existing ? existing.storagePaths : [storagePath];
-      const groupCustomerId = existing ? existing.customerId : customerId;
-
-      const timer = setTimeout(() => {
-        pendingGroups.delete(groupKey);
-        triggerImageGroupParsing(storagePaths, farmer, groupCustomerId).catch((err) =>
-          console.error('[webhook] image group parse failed:', err),
+      // Best-effort delayed flush. Fluid Compute typically reuses the instance
+      // long enough; if it doesn't fire, a future event for the same user will
+      // append to the same pending row and re-schedule.
+      setTimeout(() => {
+        processGroupIfReady(groupId, farmer, customerId).catch((err) =>
+          console.error('[webhook] processGroupIfReady failed:', err),
         );
       }, GROUP_TIMEOUT_MS);
-
-      pendingGroups.set(groupKey, { storagePaths, customerId: groupCustomerId, timer });
 
       await db
         .update(lineWebhookEvents)

@@ -50,6 +50,13 @@
       "when": 1778491802461,
       "tag": "0006_wooden_hercules",
       "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1778495246632,
+      "tag": "0007_lean_gertrude_yorkes",
+      "breakpoints": true
     }
   ]
 }

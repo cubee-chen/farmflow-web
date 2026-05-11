@@ -74,6 +74,7 @@ const INTAKE_MODE_LABEL: Record<string, string> = {
   image: '圖片上傳',
   manual: '手動建立',
   webhook: 'LINE Webhook',
+  line_webhook: '來自 LINE',
 };
 
 function InfoRow({ label, children }: { label: string; children: React.ReactNode }) {
@@ -254,6 +255,9 @@ export function OrderDetailClient({ order, items, events, products, notification
           {order.intake_mode && (
             <span className="ml-2">· {INTAKE_MODE_LABEL[order.intake_mode] ?? order.intake_mode}</span>
           )}
+          {order.intake_mode === 'line_webhook' && customerDisplayName && (
+            <span className="ml-1 text-zinc-700">· {customerDisplayName}</span>
+          )}
         </p>
         <div className="flex gap-2">
           <Button size="sm" onClick={() => setIsEditing(true)}>
@@ -348,10 +352,11 @@ export function OrderDetailClient({ order, items, events, products, notification
         </Card>
       )}
 
-      {/* Image gallery for image-intake orders */}
-      {order.intake_mode === 'image' && order.raw_image_urls && order.raw_image_urls.length > 0 && (
-        <ImageGallery paths={order.raw_image_urls} />
-      )}
+      {/* Image gallery for image-intake or LINE webhook orders carrying images */}
+      {(order.intake_mode === 'image' || order.intake_mode === 'line_webhook') &&
+        order.raw_image_urls && order.raw_image_urls.length > 0 && (
+          <ImageGallery paths={order.raw_image_urls} />
+        )}
 
       {/* Section 3: Status actions */}
       <StatusActions
