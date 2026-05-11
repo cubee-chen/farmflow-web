@@ -4,7 +4,7 @@ import { revalidatePath } from 'next/cache';
 import { redirect } from 'next/navigation';
 import { db } from '@/lib/db';
 import { orders, orderItems, orderEvents, products } from '@/lib/db/schema';
-import { getCurrentFarmerId } from '@/lib/auth/farmer-context';
+import { getCurrentFarmer, AuthError } from '@/lib/auth/get-current-farmer';
 import { orderDraftFormSchema, type OrderDraftFormData } from '@/lib/validation/order-draft';
 
 async function verifyOrder(orderId: string, farmerId: string) {
@@ -20,8 +20,12 @@ export async function updateOrder(
   orderId: string,
   formData: OrderDraftFormData,
 ): Promise<{ error: string } | void> {
-  const farmerId = await getCurrentFarmerId();
-  if (!farmerId) return { error: '請先選擇農友' };
+  let farmer;
+  try { farmer = await getCurrentFarmer(); } catch (err) {
+    if (err instanceof AuthError) return { error: '請先登入' };
+    throw err;
+  }
+  const farmerId = farmer.id;
   if (!(await verifyOrder(orderId, farmerId))) return { error: '訂單不存在或無權限' };
 
   const parsed = orderDraftFormSchema.safeParse(formData);
@@ -97,8 +101,12 @@ export async function changeOrderStatus(
   orderId: string,
   action: 'confirm' | 'pay' | 'ship' | 'complete' | 'cancel',
 ): Promise<{ error: string } | void> {
-  const farmerId = await getCurrentFarmerId();
-  if (!farmerId) return { error: '請先選擇農友' };
+  let farmer;
+  try { farmer = await getCurrentFarmer(); } catch (err) {
+    if (err instanceof AuthError) return { error: '請先登入' };
+    throw err;
+  }
+  const farmerId = farmer.id;
   if (!(await verifyOrder(orderId, farmerId))) return { error: '訂單不存在或無權限' };
 
   const now = new Date();
@@ -142,8 +150,12 @@ export async function changeOrderStatus(
 }
 
 export async function deleteOrder(orderId: string): Promise<{ error: string } | void> {
-  const farmerId = await getCurrentFarmerId();
-  if (!farmerId) return { error: '請先選擇農友' };
+  let farmer;
+  try { farmer = await getCurrentFarmer(); } catch (err) {
+    if (err instanceof AuthError) return { error: '請先登入' };
+    throw err;
+  }
+  const farmerId = farmer.id;
   if (!(await verifyOrder(orderId, farmerId))) return { error: '訂單不存在或無權限' };
 
   await db.delete(orders).where(eq(orders.id, orderId));

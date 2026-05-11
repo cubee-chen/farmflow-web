@@ -2,7 +2,7 @@
 import { and, eq, gte, lt, sql } from 'drizzle-orm';
 import { db } from '@/lib/db';
 import { orders, orderItems, orderEvents, products, customers } from '@/lib/db/schema';
-import { getCurrentFarmerId } from '@/lib/auth/farmer-context';
+import { getCurrentFarmer, AuthError } from '@/lib/auth/get-current-farmer';
 import { orderDraftFormSchema, type OrderDraftFormData } from '@/lib/validation/order-draft';
 
 function normalizePhone(phone: string): string {
@@ -18,8 +18,14 @@ export async function saveOrderDraft(
     status: 'draft' | 'confirmed';
   },
 ): Promise<{ orderId: string } | { error: string }> {
-  const farmerId = await getCurrentFarmerId();
-  if (!farmerId) return { error: '請先選擇農友' };
+  let farmer;
+  try {
+    farmer = await getCurrentFarmer();
+  } catch (err) {
+    if (err instanceof AuthError) return { error: '請先登入' };
+    return { error: '儲存失敗，請稍後重試' };
+  }
+  const farmerId = farmer.id;
 
   const parsed = orderDraftFormSchema.safeParse(formData);
   if (!parsed.success) return { error: '表單資料格式錯誤' };

@@ -4,12 +4,16 @@ import { revalidatePath } from 'next/cache';
 import { redirect } from 'next/navigation';
 import { db } from '@/lib/db';
 import { products } from '@/lib/db/schema';
-import { getCurrentFarmerId } from '@/lib/auth/farmer-context';
+import { getCurrentFarmer, AuthError } from '@/lib/auth/get-current-farmer';
 import { productSchema, type ProductFormData } from '@/lib/validation/product';
 
 export async function createProduct(data: ProductFormData): Promise<{ error: string } | void> {
-  const farmerId = await getCurrentFarmerId();
-  if (!farmerId) return { error: '請先選擇農友' };
+  let farmer;
+  try { farmer = await getCurrentFarmer(); } catch (err) {
+    if (err instanceof AuthError) return { error: '請先登入' };
+    throw err;
+  }
+  const farmerId = farmer.id;
 
   const parsed = productSchema.safeParse(data);
   if (!parsed.success) return { error: '資料格式錯誤，請確認所有欄位' };
@@ -34,8 +38,12 @@ export async function createProduct(data: ProductFormData): Promise<{ error: str
 }
 
 export async function updateProduct(id: string, data: ProductFormData): Promise<{ error: string } | void> {
-  const farmerId = await getCurrentFarmerId();
-  if (!farmerId) return { error: '請先選擇農友' };
+  let farmer;
+  try { farmer = await getCurrentFarmer(); } catch (err) {
+    if (err instanceof AuthError) return { error: '請先登入' };
+    throw err;
+  }
+  const farmerId = farmer.id;
 
   const parsed = productSchema.safeParse(data);
   if (!parsed.success) return { error: '資料格式錯誤，請確認所有欄位' };
@@ -70,8 +78,8 @@ export async function updateProduct(id: string, data: ProductFormData): Promise<
 }
 
 export async function toggleProductActive(productId: string) {
-  const farmerId = await getCurrentFarmerId();
-  if (!farmerId) throw new Error('No active farmer');
+  const farmer = await getCurrentFarmer();
+  const farmerId = farmer.id;
 
   const [product] = await db
     .select({ id: products.id, is_active: products.is_active })
