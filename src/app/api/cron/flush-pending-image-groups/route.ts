@@ -7,8 +7,11 @@ import { ensureLineUserLinked, processGroupIfReady } from '@/lib/intake/line-web
 const GROUP_TIMEOUT_MS = 30_000;
 const SWEEP_LIMIT = 5; // per run, bounded to stay under maxDuration
 
-// Vercel cron sweep: catches pending_image_groups whose setTimeout flush
-// never fired (function instance went away). Runs every minute via vercel.json.
+// Manual sweep endpoint for pending_image_groups whose setTimeout flush never
+// fired (function instance went away). Hobby plans block per-minute crons, so
+// no automatic schedule is wired in vercel.json — operators curl this with the
+// CRON_SECRET bearer header when stale rows pile up. P2 candidate: move to
+// Supabase pg_cron or upgrade Vercel plan and re-enable the crons block.
 export async function GET(req: Request) {
   const expected = process.env.CRON_SECRET;
   if (expected) {
