@@ -1,7 +1,7 @@
 import { notFound } from 'next/navigation';
 import { and, desc, eq } from 'drizzle-orm';
 import { db } from '@/lib/db';
-import { orders, orderItems, orderEvents, products, notificationTemplates } from '@/lib/db/schema';
+import { orders, orderItems, orderEvents, products, notificationTemplates, customers } from '@/lib/db/schema';
 import { getCurrentFarmer } from '@/lib/auth/require-farmer';
 import { renderTemplate } from '@/lib/notification/render';
 import { OrderDetailClient } from './_components/order-detail-client';
@@ -38,7 +38,7 @@ export default async function OrderDetailPage({ params }: Props) {
 
   if (!order) notFound();
 
-  const [itemRows, eventRows, templateRows, productList] = await Promise.all([
+  const [itemRows, eventRows, templateRows, productList, customerRow] = await Promise.all([
     db
       .select({
         product_id: orderItems.product_id,
@@ -66,9 +66,18 @@ export default async function OrderDetailPage({ params }: Props) {
       .select()
       .from(products)
       .where(eq(products.farmer_id, farmer.id)),
+
+    order.customer_id
+      ? db
+          .select({ line_user_id: customers.line_user_id })
+          .from(customers)
+          .where(eq(customers.id, order.customer_id))
+          .limit(1)
+      : Promise.resolve([]),
   ]);
 
-  const triggerEvent = STATUS_TO_TRIGGER[order.status];
+  const customerLineUserId = (customerRow as { line_user_id: string | null }[])[0]?.line_user_id ?? null;
+  const triggerEvent = STATUS_TO_TRIGGER[order.status] as 'confirmed' | 'paid' | 'shipped' | undefined;
   const matchedTemplate = templateRows.find((t) => t.trigger_event === triggerEvent)
     ?? templateRows[0]
     ?? null;
@@ -98,6 +107,8 @@ export default async function OrderDetailPage({ params }: Props) {
       events={eventRows}
       products={productList}
       notificationText={notificationText}
+      triggerEvent={triggerEvent ?? 'confirmed'}
+      customerLineUserId={customerLineUserId}
     />
   );
 }

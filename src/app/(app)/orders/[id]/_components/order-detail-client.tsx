@@ -166,9 +166,11 @@ interface Props {
   events: OrderEvent[];
   products: Product[];
   notificationText: string;
+  triggerEvent: 'confirmed' | 'paid' | 'shipped';
+  customerLineUserId: string | null;
 }
 
-export function OrderDetailClient({ order, items, events, products, notificationText }: Props) {
+export function OrderDetailClient({ order, items, events, products, notificationText, triggerEvent, customerLineUserId }: Props) {
   const router = useRouter();
   const [isEditing, setIsEditing] = useState(false);
   const [showDelete, setShowDelete] = useState(false);
@@ -352,6 +354,9 @@ export function OrderDetailClient({ order, items, events, products, notification
       <NotificationSection
         initialText={notificationText}
         recipientName={order.recipient_name}
+        orderId={order.id}
+        triggerEvent={triggerEvent}
+        customerLineUserId={customerLineUserId}
       />
 
       {/* Section 5: Timeline */}
