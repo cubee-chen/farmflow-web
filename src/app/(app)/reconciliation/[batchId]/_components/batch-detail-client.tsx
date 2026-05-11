@@ -1,6 +1,7 @@
 'use client';
 import { useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useRouter } from 'next/navigation';
 import { toast } from 'sonner';
 import { ChevronDown, ChevronUp } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -107,6 +108,7 @@ function confidenceDot(conf: string | null) {
 
 export function BatchDetailClient({ batchId }: { batchId: string }) {
   const qc = useQueryClient();
+  const router = useRouter();
 
   const { data, isLoading, error } = useQuery<BatchDetail>({
     queryKey: ['reconciliation', 'batch', batchId],
@@ -136,6 +138,22 @@ export function BatchDetailClient({ batchId }: { batchId: string }) {
       toast.success('重新配對完成');
     },
     onError: () => toast.error('重新配對失敗'),
+  });
+
+  const confirmMutation = useMutation({
+    mutationFn: async () => {
+      const res = await fetch(`/api/reconciliation/${batchId}/confirm`, { method: 'POST' });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error ?? '確認失敗');
+      return data as { confirmedCount: number; orderIds: string[] };
+    },
+    onSuccess: (data) => {
+      toast.success(`已確認 ${data.confirmedCount} 筆訂單為已付款`);
+      qc.invalidateQueries({ queryKey: ['reconciliation', 'batch', batchId] });
+      qc.invalidateQueries({ queryKey: ['reconciliation', 'batches'] });
+      router.push(`/reconciliation/${batchId}/confirmed`);
+    },
+    onError: (e: Error) => toast.error(e.message),
   });
 
   // Local UI state
@@ -395,16 +413,16 @@ export function BatchDetailClient({ batchId }: { batchId: string }) {
           variant="outline"
           size="sm"
           onClick={() => setRerunOpen(true)}
-          disabled={rerunMutation.isPending}
+          disabled={rerunMutation.isPending || batch.status === 'confirmed'}
         >
           {rerunMutation.isPending ? '配對中…' : '重新跑匹配'}
         </Button>
         <Button
           size="sm"
           onClick={() => setConfirmOpen(true)}
-          disabled={batch.status === 'confirmed'}
+          disabled={batch.status === 'confirmed' || confirmMutation.isPending}
         >
-          確認對帳
+          {batch.status === 'confirmed' ? '已確認' : '確認對帳'}
         </Button>
       </div>
 
@@ -431,7 +449,7 @@ export function BatchDetailClient({ batchId }: { batchId: string }) {
         </AlertDialogContent>
       </AlertDialog>
 
-      {/* Confirm dialog — stub (next task) */}
+      {/* Confirm dialog */}
       <AlertDialog open={confirmOpen} onOpenChange={setConfirmOpen}>
         <AlertDialogContent>
           <AlertDialogHeader>
@@ -444,20 +462,9 @@ export function BatchDetailClient({ batchId }: { batchId: string }) {
           <AlertDialogFooter>
             <AlertDialogCancel>取消</AlertDialogCancel>
             <AlertDialogAction
-              onClick={async () => {
+              onClick={() => {
                 setConfirmOpen(false);
-                const res = await fetch(`/api/reconciliation/${batchId}/confirm`, {
-                  method: 'POST',
-                });
-                if (res.status === 404 || res.status === 501) {
-                  toast.info('對帳確認功能即將推出（下個版本）');
-                } else if (!res.ok) {
-                  toast.error('確認失敗');
-                } else {
-                  toast.success('對帳已確認');
-                  qc.invalidateQueries({ queryKey: ['reconciliation', 'batch', batchId] });
-                  qc.invalidateQueries({ queryKey: ['reconciliation', 'batches'] });
-                }
+                confirmMutation.mutate();
               }}
             >
               確定確認
