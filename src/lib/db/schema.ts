@@ -190,3 +190,74 @@ export const notificationTemplates = pgTable(
 
 export type NotificationTemplate = InferSelectModel<typeof notificationTemplates>;
 export type NewNotificationTemplate = InferInsertModel<typeof notificationTemplates>;
+
+export const bankReconciliationBatches = pgTable(
+  "bank_reconciliation_batches",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    farmer_id: uuid("farmer_id")
+      .notNull()
+      .references(() => farmers.id),
+    source: text("source").notNull(),
+    uploaded_filename: text("uploaded_filename"),
+    row_count: integer("row_count").notNull().default(0),
+    matched_count: integer("matched_count").notNull().default(0),
+    unmatched_count: integer("unmatched_count").notNull().default(0),
+    ambiguous_count: integer("ambiguous_count").notNull().default(0),
+    status: text("status").notNull().default("draft"),
+    created_at: timestamp("created_at", { withTimezone: true }).defaultNow(),
+    confirmed_at: timestamp("confirmed_at", { withTimezone: true }),
+  },
+  (table) => [
+    index("bank_reconciliation_batches_farmer_id_idx").on(table.farmer_id),
+  ]
+);
+
+export type BankReconciliationBatch = InferSelectModel<typeof bankReconciliationBatches>;
+export type NewBankReconciliationBatch = InferInsertModel<typeof bankReconciliationBatches>;
+
+export const bankTransactions = pgTable(
+  "bank_transactions",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    batch_id: uuid("batch_id")
+      .notNull()
+      .references(() => bankReconciliationBatches.id, { onDelete: "cascade" }),
+    tx_date: date("tx_date").notNull(),
+    amount: numeric("amount", { precision: 12, scale: 2 }).notNull(),
+    direction: text("direction").notNull(),
+    account_last_5: text("account_last_5"),
+    memo: text("memo"),
+    raw_row: jsonb("raw_row").notNull(),
+  },
+  (table) => [
+    index("bank_transactions_batch_id_idx").on(table.batch_id),
+  ]
+);
+
+export type BankTransaction = InferSelectModel<typeof bankTransactions>;
+export type NewBankTransaction = InferInsertModel<typeof bankTransactions>;
+
+export const reconciliationMatches = pgTable(
+  "reconciliation_matches",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    bank_transaction_id: uuid("bank_transaction_id")
+      .notNull()
+      .references(() => bankTransactions.id, { onDelete: "cascade" }),
+    order_id: uuid("order_id").references(() => orders.id),
+    match_status: text("match_status").notNull(),
+    confidence: numeric("confidence", { precision: 3, scale: 2 }),
+    candidates: jsonb("candidates"),
+    resolved_by: text("resolved_by"),
+    resolved_at: timestamp("resolved_at", { withTimezone: true }),
+    created_at: timestamp("created_at", { withTimezone: true }).defaultNow(),
+  },
+  (table) => [
+    index("reconciliation_matches_bank_tx_id_idx").on(table.bank_transaction_id),
+    index("reconciliation_matches_order_id_idx").on(table.order_id),
+  ]
+);
+
+export type ReconciliationMatch = InferSelectModel<typeof reconciliationMatches>;
+export type NewReconciliationMatch = InferInsertModel<typeof reconciliationMatches>;

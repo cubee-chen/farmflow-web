@@ -141,3 +141,65 @@ CREATE POLICY "service_role_all" ON notification_templates
 --   → 預期：permission denied（比 0 rows 更嚴格，屬正確安全行為）
 --   → 若預期看到 0 rows 而非報錯，需先 GRANT SELECT ON farmers TO anon，
 --     但對本系統而言無此必要。
+
+-- =============================================================
+-- P1-R1 新增：銀行對帳三張表的 RLS
+-- =============================================================
+
+-- 移除舊 policy（確保冪等）
+DROP POLICY IF EXISTS "farmer_owns_reconciliation_batches" ON bank_reconciliation_batches;
+DROP POLICY IF EXISTS "via_batch_bank_transactions" ON bank_transactions;
+DROP POLICY IF EXISTS "via_tx_reconciliation_matches" ON reconciliation_matches;
+DROP POLICY IF EXISTS "service_role_all" ON bank_reconciliation_batches;
+DROP POLICY IF EXISTS "service_role_all" ON bank_transactions;
+DROP POLICY IF EXISTS "service_role_all" ON reconciliation_matches;
+
+-- bank_reconciliation_batches：直接帶 farmer_id
+CREATE POLICY "farmer_owns_reconciliation_batches" ON bank_reconciliation_batches
+  FOR ALL TO authenticated
+  USING (farmer_id = current_farmer_id())
+  WITH CHECK (farmer_id = current_farmer_id());
+
+-- bank_transactions：透過 batch 反查 farmer
+CREATE POLICY "via_batch_bank_transactions" ON bank_transactions
+  FOR ALL TO authenticated
+  USING (
+    batch_id IN (
+      SELECT id FROM bank_reconciliation_batches
+      WHERE farmer_id = current_farmer_id()
+    )
+  )
+  WITH CHECK (
+    batch_id IN (
+      SELECT id FROM bank_reconciliation_batches
+      WHERE farmer_id = current_farmer_id()
+    )
+  );
+
+-- reconciliation_matches：透過 bank_transaction → batch 反查 farmer
+CREATE POLICY "via_tx_reconciliation_matches" ON reconciliation_matches
+  FOR ALL TO authenticated
+  USING (
+    bank_transaction_id IN (
+      SELECT bt.id FROM bank_transactions bt
+      JOIN bank_reconciliation_batches brb ON bt.batch_id = brb.id
+      WHERE brb.farmer_id = current_farmer_id()
+    )
+  )
+  WITH CHECK (
+    bank_transaction_id IN (
+      SELECT bt.id FROM bank_transactions bt
+      JOIN bank_reconciliation_batches brb ON bt.batch_id = brb.id
+      WHERE brb.farmer_id = current_farmer_id()
+    )
+  );
+
+-- service_role 全權
+CREATE POLICY "service_role_all" ON bank_reconciliation_batches
+  FOR ALL TO service_role USING (true) WITH CHECK (true);
+
+CREATE POLICY "service_role_all" ON bank_transactions
+  FOR ALL TO service_role USING (true) WITH CHECK (true);
+
+CREATE POLICY "service_role_all" ON reconciliation_matches
+  FOR ALL TO service_role USING (true) WITH CHECK (true);
