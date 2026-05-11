@@ -1,5 +1,5 @@
 import Link from 'next/link';
-import { FileText, ImageIcon, Pencil } from 'lucide-react';
+import { FileText, ImageIcon, MessageCircle, Pencil } from 'lucide-react';
 import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import type { OrderWithItems } from '@/lib/queries/orders';
@@ -22,6 +22,7 @@ const INTAKE_MODE_ICON = {
   paste: { Icon: FileText, title: '貼上文字' },
   image: { Icon: ImageIcon, title: '圖片上傳' },
   manual: { Icon: Pencil, title: '手動建立' },
+  line_webhook: { Icon: MessageCircle, title: 'LINE 接單' },
 } as const;
 
 function itemSummary(items: { quantity: number; display_name: string }[]) {
@@ -30,8 +31,14 @@ function itemSummary(items: { quantity: number; display_name: string }[]) {
 }
 
 export function OrderCard({ order }: { order: OrderWithItems }) {
+  const isNewWebhook = order.intake_mode === 'line_webhook' && order.status === 'draft';
+
   return (
-    <Card className="relative hover:shadow-md transition-shadow">
+    <Card
+      className={`relative hover:shadow-md transition-shadow overflow-hidden ${
+        isNewWebhook ? 'border-l-4 border-l-blue-500' : ''
+      }`}
+    >
       <Link
         href={`/orders/${order.id}`}
         className="absolute inset-0"
@@ -69,14 +76,20 @@ export function OrderCard({ order }: { order: OrderWithItems }) {
             <span className="font-bold text-sm">
               NT${Number(order.total_amount).toLocaleString()}
             </span>
-            {order.intake_mode && INTAKE_MODE_ICON[order.intake_mode as keyof typeof INTAKE_MODE_ICON] && (() => {
-              const { Icon, title } = INTAKE_MODE_ICON[order.intake_mode as keyof typeof INTAKE_MODE_ICON];
-              return (
-                <span title={title}>
-                  <Icon className="size-3.5 text-zinc-400" />
-                </span>
-              );
-            })()}
+            {order.intake_mode &&
+              INTAKE_MODE_ICON[order.intake_mode as keyof typeof INTAKE_MODE_ICON] &&
+              (() => {
+                const { Icon, title } =
+                  INTAKE_MODE_ICON[order.intake_mode as keyof typeof INTAKE_MODE_ICON];
+                const isLine = order.intake_mode === 'line_webhook';
+                return (
+                  <span title={title}>
+                    <Icon
+                      className={`size-3.5 ${isLine ? 'text-blue-500' : 'text-zinc-400'}`}
+                    />
+                  </span>
+                );
+              })()}
           </div>
           {order.ship_date && (
             <span className="text-xs text-zinc-500">出貨：{order.ship_date}</span>

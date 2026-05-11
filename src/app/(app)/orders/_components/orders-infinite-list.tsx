@@ -10,23 +10,25 @@ interface Props {
   initialHasMore: boolean;
   status: string;
   q: string;
+  intake: string;
 }
 
-async function fetchPage(status: string, q: string, page: number) {
+async function fetchPage(status: string, q: string, intake: string, page: number) {
   const params = new URLSearchParams({ page: String(page) });
   if (status) params.set('status', status);
   if (q) params.set('q', q);
+  if (intake) params.set('intake', intake);
   const res = await fetch(`/api/orders/list?${params}`);
   if (!res.ok) throw new Error('Failed to load orders');
   return res.json() as Promise<{ orders: OrderWithItems[]; hasMore: boolean }>;
 }
 
-export function OrdersInfiniteList({ initialOrders, initialHasMore, status, q }: Props) {
+export function OrdersInfiniteList({ initialOrders, initialHasMore, status, q, intake }: Props) {
   const sentinelRef = useRef<HTMLDivElement>(null);
 
   const { data, fetchNextPage, hasNextPage, isFetchingNextPage } = useInfiniteQuery({
-    queryKey: ['orders', status, q],
-    queryFn: ({ pageParam }) => fetchPage(status, q, pageParam as number),
+    queryKey: ['orders', status, q, intake],
+    queryFn: ({ pageParam }) => fetchPage(status, q, intake, pageParam as number),
     initialPageParam: 2,
     getNextPageParam: (lastPage, _, lastPageParam) =>
       lastPage.hasMore ? (lastPageParam as number) + 1 : undefined,

@@ -1,8 +1,10 @@
 import { createHmac } from 'crypto';
+import { after } from 'next/server';
 import { NextRequest, NextResponse } from 'next/server';
 import { eq } from 'drizzle-orm';
 import { db } from '@/lib/db';
 import { farmers, lineWebhookEvents } from '@/lib/db/schema';
+import { processLineEvent } from '@/lib/intake/line-webhook-adapter';
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -13,11 +15,10 @@ function verifySignature(secret: string, rawBody: string, signature: string): bo
 
 export async function POST(
   req: NextRequest,
-  { params }: { params: Promise<{ farmerId: string }> }
+  { params }: { params: Promise<{ farmerId: string }> },
 ) {
   const { farmerId } = await params;
 
-  // Must read body before any await that might consume it
   const rawBody = await req.text();
   const signature = req.headers.get('x-line-signature') ?? '';
 
@@ -27,7 +28,7 @@ export async function POST(
   }
 
   const [farmer] = await db
-    .select({ id: farmers.id, line_channel_secret: farmers.line_channel_secret })
+    .select()
     .from(farmers)
     .where(eq(farmers.id, farmerId))
     .limit(1);
@@ -70,7 +71,15 @@ export async function POST(
       };
     });
 
-    await db.insert(lineWebhookEvents).values(rows);
+    const inserted = await db
+      .insert(lineWebhookEvents)
+      .values(rows)
+      .returning({ id: lineWebhookEvents.id });
+
+    // Process after response is sent — must be < 1s to LINE
+    after(async () => {
+      await Promise.all(inserted.map((row, i) => processLineEvent(row.id, events[i], farmer)));
+    });
   }
 
   return NextResponse.json({ ok: true });

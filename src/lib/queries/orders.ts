@@ -9,7 +9,7 @@ export type OrderWithItems = Order & {
 
 const PAGE_SIZE = 50;
 
-function buildWhere(farmerId: string, status: string, q: string) {
+function buildWhere(farmerId: string, status: string, q: string, intake: string) {
   const today = new Date().toISOString().split('T')[0];
 
   return and(
@@ -23,6 +23,7 @@ function buildWhere(farmerId: string, status: string, q: string) {
       : status && status !== 'all'
         ? eq(orders.status, status)
         : undefined,
+    intake ? eq(orders.intake_mode, intake) : undefined,
     q
       ? or(
           ilike(orders.recipient_name, `%${q}%`),
@@ -36,14 +37,16 @@ export async function listOrders({
   farmerId,
   status = '',
   q = '',
+  intake = '',
   page = 1,
 }: {
   farmerId: string;
   status?: string;
   q?: string;
+  intake?: string;
   page?: number;
 }): Promise<{ orders: OrderWithItems[]; hasMore: boolean }> {
-  const where = buildWhere(farmerId, status, q);
+  const where = buildWhere(farmerId, status, q, intake);
   const limit = PAGE_SIZE + 1;
   const offset = (page - 1) * PAGE_SIZE;
 

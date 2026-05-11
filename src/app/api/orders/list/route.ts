@@ -8,8 +8,9 @@ export async function GET(req: NextRequest) {
 
   const status = searchParams.get('status') ?? '';
   const q = searchParams.get('q') ?? '';
+  const intake = searchParams.get('intake') ?? '';
   const page = Math.max(1, Number(searchParams.get('page') ?? '1'));
 
-  const result = await listOrders({ farmerId: farmer.id, status, q, page });
+  const result = await listOrders({ farmerId: farmer.id, status, q, intake, page });
   return NextResponse.json(result);
 }
