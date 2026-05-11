@@ -4,6 +4,7 @@ import { useRouter } from 'next/navigation';
 import { formatDistanceToNow } from 'date-fns';
 import { zhTW } from 'date-fns/locale';
 import { toast } from 'sonner';
+import { ChevronDown } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -68,12 +69,86 @@ const PAYMENT_METHOD_LABEL: Record<string, string> = {
   cod: '貨到付款',
 };
 
+const INTAKE_MODE_LABEL: Record<string, string> = {
+  paste: '貼上文字',
+  image: '圖片上傳',
+  manual: '手動建立',
+  webhook: 'LINE Webhook',
+};
+
 function InfoRow({ label, children }: { label: string; children: React.ReactNode }) {
   return (
     <div className="grid grid-cols-3 items-start gap-1 text-sm">
       <span className="text-zinc-500">{label}</span>
       <span className="col-span-2">{children}</span>
     </div>
+  );
+}
+
+function ImageGallery({ paths }: { paths: string[] }) {
+  const [open, setOpen] = useState(false);
+  const [signedUrls, setSignedUrls] = useState<string[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [modalUrl, setModalUrl] = useState<string | null>(null);
+
+  async function loadUrls() {
+    if (signedUrls.length > 0) return;
+    setLoading(true);
+    try {
+      const res = await fetch('/api/storage/signed-urls', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ paths }),
+      });
+      if (!res.ok) throw new Error('Failed');
+      const data: { signedUrls: string[] } = await res.json();
+      setSignedUrls(data.signedUrls);
+    } catch {
+      // silently ignore
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  return (
+    <Card>
+      <CardContent className="p-4">
+        <button
+          type="button"
+          onClick={() => { const next = !open; setOpen(next); if (next) loadUrls(); }}
+          className="flex w-full items-center justify-between text-sm font-medium text-zinc-700"
+        >
+          <span>上傳的截圖（{paths.length} 張）</span>
+          <ChevronDown className={`size-4 transition-transform ${open ? 'rotate-180' : ''}`} />
+        </button>
+
+        {open && (
+          <div className="mt-3 grid grid-cols-3 gap-2">
+            {loading && <p className="col-span-3 text-xs text-zinc-400">載入中...</p>}
+            {signedUrls.filter(Boolean).map((url, i) => (
+              <button
+                key={i}
+                type="button"
+                onClick={() => setModalUrl(url)}
+                className="overflow-hidden rounded-md border border-zinc-200"
+              >
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img src={url} alt={`截圖 ${i + 1}`} className="h-20 w-full object-cover" />
+              </button>
+            ))}
+          </div>
+        )}
+
+        <Dialog open={!!modalUrl} onOpenChange={() => setModalUrl(null)}>
+          <DialogContent className="max-w-screen-md p-2">
+            {modalUrl && (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img src={modalUrl} alt="截圖大圖" className="w-full rounded-md" />
+            )}
+          </DialogContent>
+        </Dialog>
+      </CardContent>
+    </Card>
   );
 }
 
@@ -162,7 +237,12 @@ export function OrderDetailClient({ order, items, events, products, notification
             {STATUS_LABEL[order.status] ?? order.status}
           </Badge>
         </div>
-        <p className="text-sm text-zinc-500">{relativeTime}</p>
+        <p className="text-sm text-zinc-500">
+          {relativeTime}
+          {order.intake_mode && (
+            <span className="ml-2">· {INTAKE_MODE_LABEL[order.intake_mode] ?? order.intake_mode}</span>
+          )}
+        </p>
         <div className="flex gap-2">
           <Button size="sm" onClick={() => setIsEditing(true)}>
             編輯
@@ -256,6 +336,11 @@ export function OrderDetailClient({ order, items, events, products, notification
         </Card>
       )}
 
+      {/* Image gallery for image-intake orders */}
+      {order.intake_mode === 'image' && order.raw_image_urls && order.raw_image_urls.length > 0 && (
+        <ImageGallery paths={order.raw_image_urls} />
+      )}
+
       {/* Section 3: Status actions */}
       <StatusActions
         orderId={order.id}
@@ -309,7 +394,7 @@ export function OrderDetailClient({ order, items, events, products, notification
       {order.raw_text && (
         <details className="rounded-lg border border-zinc-200">
           <summary className="cursor-pointer px-4 py-2 text-sm font-medium text-zinc-600 select-none">
-            原始訊息
+            {order.intake_mode === 'image' ? 'OCR 辨識文字' : '原始訊息'}
           </summary>
           <div className="px-4 pb-4 pt-2">
             <pre className="whitespace-pre-wrap font-mono text-xs text-zinc-600 leading-relaxed">

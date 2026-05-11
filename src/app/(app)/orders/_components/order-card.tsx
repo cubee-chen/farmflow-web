@@ -1,4 +1,5 @@
 import Link from 'next/link';
+import { FileText, ImageIcon, Pencil } from 'lucide-react';
 import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import type { OrderWithItems } from '@/lib/queries/orders';
@@ -16,6 +17,12 @@ const STATUS_CLASS: Record<string, string> = {
   shipped: 'bg-green-100 text-green-700 hover:bg-green-100',
   completed: 'bg-zinc-900 text-white hover:bg-zinc-900',
 };
+
+const INTAKE_MODE_ICON = {
+  paste: { Icon: FileText, title: '貼上文字' },
+  image: { Icon: ImageIcon, title: '圖片上傳' },
+  manual: { Icon: Pencil, title: '手動建立' },
+} as const;
 
 function itemSummary(items: { quantity: number; display_name: string }[]) {
   if (items.length === 0) return '—';
@@ -58,9 +65,19 @@ export function OrderCard({ order }: { order: OrderWithItems }) {
         <div className="text-xs text-zinc-500 line-clamp-1">{itemSummary(order.items)}</div>
 
         <div className="flex items-center justify-between mt-1">
-          <span className="font-bold text-sm">
-            NT${Number(order.total_amount).toLocaleString()}
-          </span>
+          <div className="flex items-center gap-1.5">
+            <span className="font-bold text-sm">
+              NT${Number(order.total_amount).toLocaleString()}
+            </span>
+            {order.intake_mode && INTAKE_MODE_ICON[order.intake_mode as keyof typeof INTAKE_MODE_ICON] && (() => {
+              const { Icon, title } = INTAKE_MODE_ICON[order.intake_mode as keyof typeof INTAKE_MODE_ICON];
+              return (
+                <span title={title}>
+                  <Icon className="size-3.5 text-zinc-400" />
+                </span>
+              );
+            })()}
+          </div>
           {order.ship_date && (
             <span className="text-xs text-zinc-500">出貨：{order.ship_date}</span>
           )}

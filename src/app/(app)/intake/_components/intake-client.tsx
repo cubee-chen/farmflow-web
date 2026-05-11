@@ -1,5 +1,5 @@
 'use client';
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { Loader2, Sparkles } from 'lucide-react';
@@ -23,6 +23,13 @@ export function IntakeClient({ products }: IntakeClientProps) {
   const [draft, setDraft] = useState<ParsedOrderDraft | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [rawCollapsed, setRawCollapsed] = useState(false);
+  const [activeTab, setActiveTab] = useState<'text' | 'image'>('text');
+
+  useEffect(() => {
+    if (window.matchMedia('(pointer: coarse)').matches) {
+      setActiveTab('image');
+    }
+  }, []);
 
   async function handleParse() {
     const text = rawText.trim();
@@ -65,7 +72,7 @@ export function IntakeClient({ products }: IntakeClientProps) {
   }
 
   return (
-    <Tabs defaultValue="text" className="space-y-4">
+    <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as 'text' | 'image')} className="space-y-4">
       <TabsList className="w-full">
         <TabsTrigger value="text" className="flex-1">貼上文字</TabsTrigger>
         <TabsTrigger value="image" className="flex-1">上傳截圖</TabsTrigger>
