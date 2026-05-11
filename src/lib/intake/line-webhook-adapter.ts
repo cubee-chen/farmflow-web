@@ -126,7 +126,7 @@ async function createDraftOrder(params: {
       .insert(orders)
       .values({
         farmer_id: farmerId,
-        customer_id: linkedCustomerId,
+        customer_id: linkedCustomerId ?? undefined,
         order_number: orderNumber,
         intake_mode: 'line_webhook',
         raw_text: rawText,
