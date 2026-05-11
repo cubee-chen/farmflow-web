@@ -215,6 +215,18 @@ async function createDraftOrder(params: {
       payload: { source: 'line_webhook', confidence: draft.confidence },
       created_by: 'system',
     });
+
+    // Keep customer denormalised totals in sync — same pattern as paste mode.
+    if (customerId) {
+      await tx
+        .update(customers)
+        .set({
+          total_orders: sql`${customers.total_orders} + 1`,
+          total_amount: sql`${customers.total_amount} + ${String(totalAmount)}::numeric`,
+          last_ordered_at: new Date(),
+        })
+        .where(eq(customers.id, customerId));
+    }
   });
 }
 
