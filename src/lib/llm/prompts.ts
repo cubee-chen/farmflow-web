@@ -1,7 +1,7 @@
 import 'server-only';
 import type { Farmer, Product } from '@/lib/db/schema';
 
-function buildProductCatalog(products: Product[]): string {
+export function buildProductCatalog(products: Product[]): string {
   return products
     .map((p) => {
       const aliases = p.short_aliases?.length ? `（別名：${p.short_aliases.join('、')}）` : '';
@@ -11,7 +11,7 @@ function buildProductCatalog(products: Product[]): string {
     .join('\n');
 }
 
-function buildFewShots(products: Product[]): string {
+export function buildFewShots(products: Product[]): string {
   const p0 = products[0];
   const p1 = products[1] ?? products[0];
   const p2 = products[2] ?? products[0];

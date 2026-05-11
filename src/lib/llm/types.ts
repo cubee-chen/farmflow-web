@@ -16,4 +16,6 @@ export interface ParsedOrderDraft {
   notes: string | null;
   confidence: number; // 0-1
   ambiguities: string[];
+  image_quality?: 'clear' | 'blurry' | 'partial' | 'unreadable' | null;
+  ocr_text?: string | null;
 }
