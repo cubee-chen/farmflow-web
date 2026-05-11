@@ -5,11 +5,14 @@ const nextConfig: NextConfig = {
   /* config options here */
 };
 
-export default withPWA({
-  dest: "public",
-  disable: process.env.NODE_ENV === "development",
-  register: true,
-  workboxOptions: {
-    skipWaiting: true,
-  },
-})(nextConfig);
+const isDev = process.env.NODE_ENV === "development";
+
+export default isDev
+  ? nextConfig
+  : withPWA({
+      dest: "public",
+      register: true,
+      workboxOptions: {
+        skipWaiting: true,
+      },
+    })(nextConfig);
