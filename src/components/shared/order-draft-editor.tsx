@@ -1,8 +1,9 @@
 'use client';
 import { useState } from 'react';
+import { useRouter } from 'next/navigation';
 import { useForm, useFieldArray } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
-import { Trash2, Plus, Loader2 } from 'lucide-react';
+import { Trash2, Plus, Loader2, ChevronDown } from 'lucide-react';
 import { toast } from 'sonner';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -23,6 +24,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
+import { Dialog, DialogContent } from '@/components/ui/dialog';
 import { orderDraftFormSchema, type OrderDraftFormData } from '@/lib/validation/order-draft';
 import { saveOrderDraft } from '@/app/(app)/intake/actions';
 import { updateOrder } from '@/app/(app)/orders/actions';
@@ -47,6 +49,7 @@ interface OrderDraftEditorProps {
   draft?: ParsedOrderDraft;
   rawText?: string;
   imageStoragePaths?: string[];
+  imageQuality?: string;
   existingOrder?: ExistingOrderForEdit;
   products: Product[];
   onSaved: (orderId: string) => void;
@@ -61,8 +64,15 @@ function isAmbiguous(keywords: string[], ambiguities: string[]): boolean {
 // Thin amber ring applied to a FormItem when the field is ambiguous
 const AMBIGUOUS_CLASS = 'ring-1 ring-amber-400 rounded-md px-2 pb-2';
 
+const QUALITY_LABEL: Record<string, string> = {
+  clear: '清晰',
+  blurry: '模糊',
+  partial: '不完整',
+  unreadable: '無法辨識',
+};
+
 // ── Confidence progress bar ────────────────────────────────────────────────
-function ConfidenceBar({ confidence }: { confidence: number }) {
+function ConfidenceBar({ confidence, imageQuality }: { confidence: number; imageQuality?: string }) {
   const pct = Math.round(confidence * 100);
   const barColor =
     confidence < 0.5
@@ -83,7 +93,82 @@ function ConfidenceBar({ confidence }: { confidence: number }) {
           style={{ width: `${pct}%` }}
         />
       </div>
+      {imageQuality && (
+        <p className="text-xs text-zinc-400">
+          圖片品質：{QUALITY_LABEL[imageQuality] ?? imageQuality}
+        </p>
+      )}
     </div>
+  );
+}
+
+// ── Image preview section ──────────────────────────────────────────────────
+function ImagePreviewSection({ paths }: { paths: string[] }) {
+  const [open, setOpen] = useState(false);
+  const [signedUrls, setSignedUrls] = useState<string[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [modalUrl, setModalUrl] = useState<string | null>(null);
+
+  async function loadUrls() {
+    if (signedUrls.length > 0) return;
+    setLoading(true);
+    try {
+      const res = await fetch('/api/storage/signed-urls', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ paths }),
+      });
+      if (!res.ok) throw new Error('Failed');
+      const data: { signedUrls: string[] } = await res.json();
+      setSignedUrls(data.signedUrls);
+    } catch {
+      // silently ignore — thumbnails are non-critical
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  return (
+    <Card>
+      <CardContent className="p-4">
+        <button
+          type="button"
+          onClick={() => { const next = !open; setOpen(next); if (next) loadUrls(); }}
+          className="flex w-full items-center justify-between text-sm font-medium text-zinc-700"
+        >
+          <span>上傳的截圖（{paths.length} 張）</span>
+          <ChevronDown className={`size-4 transition-transform ${open ? 'rotate-180' : ''}`} />
+        </button>
+
+        {open && (
+          <div className="mt-3 grid grid-cols-3 gap-2">
+            {loading && (
+              <p className="col-span-3 text-xs text-zinc-400">載入中...</p>
+            )}
+            {signedUrls.filter(Boolean).map((url, i) => (
+              <button
+                key={i}
+                type="button"
+                onClick={() => setModalUrl(url)}
+                className="overflow-hidden rounded-md border border-zinc-200"
+              >
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img src={url} alt={`截圖 ${i + 1}`} className="h-20 w-full object-cover" />
+              </button>
+            ))}
+          </div>
+        )}
+
+        <Dialog open={!!modalUrl} onOpenChange={() => setModalUrl(null)}>
+          <DialogContent className="max-w-screen-md p-2">
+            {modalUrl && (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img src={modalUrl} alt="截圖大圖" className="w-full rounded-md" />
+            )}
+          </DialogContent>
+        </Dialog>
+      </CardContent>
+    </Card>
   );
 }
 
@@ -92,11 +177,13 @@ export function OrderDraftEditor({
   draft,
   rawText,
   imageStoragePaths,
+  imageQuality,
   existingOrder,
   products,
   onSaved,
   onCancel,
 }: OrderDraftEditorProps) {
+  const router = useRouter();
   const [isSaving, setIsSaving] = useState(false);
   const isEditMode = !!existingOrder;
   const activeProducts = products.filter((p) => p.is_active);
@@ -200,7 +287,27 @@ export function OrderDraftEditor({
         {!isEditMode && draft && (
           <Card>
             <CardContent className="p-4 space-y-3">
-              <ConfidenceBar confidence={draft.confidence} />
+              <ConfidenceBar confidence={draft.confidence} imageQuality={imageQuality} />
+
+              {/* Confidence banner — image mode only */}
+              {imageQuality && draft.confidence >= 0.3 && draft.confidence < 0.5 && (
+                <div className="flex items-center justify-between rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-800">
+                  <span>圖片可能模糊，建議重拍或改用文字輸入</span>
+                  <button
+                    type="button"
+                    onClick={() => router.push('/intake')}
+                    className="ml-3 shrink-0 text-xs text-red-700 underline"
+                  >
+                    改用文字模式
+                  </button>
+                </div>
+              )}
+              {imageQuality && draft.confidence >= 0.5 && draft.confidence < 0.8 && (
+                <div className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800">
+                  解析信心較低，請仔細核對每個欄位
+                </div>
+              )}
+
               {draft.ambiguities.length > 0 && (
                 <div className="space-y-1 rounded-md border border-amber-200 bg-amber-50 p-3">
                   {draft.ambiguities.map((a, i) => (
@@ -212,6 +319,11 @@ export function OrderDraftEditor({
               )}
             </CardContent>
           </Card>
+        )}
+
+        {/* ── 截圖預覽（圖片模式） ───────────────────────────── */}
+        {!isEditMode && imageStoragePaths && imageStoragePaths.length > 0 && (
+          <ImagePreviewSection paths={imageStoragePaths} />
         )}
 
         {/* ── 區塊 2：商品明細 ──────────────────────────────── */}

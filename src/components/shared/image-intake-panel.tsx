@@ -1,13 +1,33 @@
 'use client';
 import { useRef, useEffect, useState, useCallback } from 'react';
-import { ImageIcon, X, Camera, Loader2, Sparkles } from 'lucide-react';
+import { useRouter } from 'next/navigation';
+import Link from 'next/link';
+import { ImageIcon, X, Camera, Loader2, Sparkles, AlertCircle } from 'lucide-react';
 import { toast } from 'sonner';
+import {
+  DndContext,
+  closestCenter,
+  PointerSensor,
+  useSensor,
+  useSensors,
+  type DragEndEvent,
+} from '@dnd-kit/core';
+import {
+  arrayMove,
+  SortableContext,
+  rectSortingStrategy,
+  useSortable,
+} from '@dnd-kit/sortable';
+import { CSS } from '@dnd-kit/utilities';
 import { Button } from '@/components/ui/button';
 import { OrderDraftEditor } from '@/components/shared/order-draft-editor';
 import type { ParsedOrderDraft } from '@/lib/llm/types';
 import type { Product } from '@/lib/db/schema';
 
+const MAX_FILES = 5;
+
 interface FileItem {
+  id: string;
   file: File;
   previewUrl: string;
 }
@@ -67,6 +87,86 @@ async function uploadBlob(blob: Blob): Promise<string> {
   return data.storagePath as string;
 }
 
+// ── Sortable file card ────────────────────────────────────────────────────────
+function SortableFileCard({ item, onRemove }: { item: FileItem; onRemove: () => void }) {
+  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
+    id: item.id,
+  });
+
+  return (
+    <div
+      ref={setNodeRef}
+      style={{
+        transform: CSS.Transform.toString(transform),
+        transition,
+        opacity: isDragging ? 0.5 : 1,
+      }}
+      className="relative rounded-lg border border-zinc-200 overflow-hidden bg-white"
+      {...attributes}
+    >
+      {/* Image acts as drag handle */}
+      {/* eslint-disable-next-line @next/next/no-img-element */}
+      <img
+        src={item.previewUrl}
+        alt={item.file.name}
+        className="h-32 w-full object-cover cursor-grab active:cursor-grabbing"
+        {...listeners}
+        draggable={false}
+      />
+      <div className="px-2 py-1.5">
+        <p className="truncate text-xs font-medium text-zinc-700">{item.file.name}</p>
+        <p className="text-xs text-zinc-400">{formatBytes(item.file.size)}</p>
+      </div>
+      <button
+        type="button"
+        onClick={(e) => { e.stopPropagation(); onRemove(); }}
+        className="absolute right-1 top-1 rounded-full bg-black/40 p-0.5 text-white hover:bg-black/60"
+        aria-label="刪除"
+      >
+        <X className="size-3.5" />
+      </button>
+    </div>
+  );
+}
+
+// ── Unreadable error screen ───────────────────────────────────────────────────
+const QUALITY_DESC: Record<string, string> = {
+  unreadable: '圖片完全無法辨識，請確認截圖清楚後重新上傳',
+  blurry: '圖片模糊，無法提取足夠訂單資訊，請重拍後再試',
+  partial: '圖片不完整，遺漏關鍵訂單資訊',
+};
+
+function UnreadableErrorScreen({
+  quality,
+  onRetry,
+}: {
+  quality: string | null | undefined;
+  onRetry: () => void;
+}) {
+  const router = useRouter();
+  const desc = (quality && QUALITY_DESC[quality]) ?? '圖片品質不足，無法解析訂單資訊';
+
+  return (
+    <div className="flex flex-col items-center gap-5 py-12 text-center">
+      <AlertCircle className="size-12 text-red-400" />
+      <div>
+        <p className="font-semibold text-zinc-800">無法辨識圖片</p>
+        <p className="mt-1 text-sm text-zinc-500">{desc}</p>
+      </div>
+      <div className="flex w-full flex-col gap-2">
+        <Button onClick={onRetry} className="w-full">重新上傳</Button>
+        <Button variant="outline" onClick={() => router.push('/intake')} className="w-full">
+          改用文字模式
+        </Button>
+        <Button variant="ghost" asChild className="w-full">
+          <Link href="/intake/manual">手動建立訂單</Link>
+        </Button>
+      </div>
+    </div>
+  );
+}
+
+// ── Main component ────────────────────────────────────────────────────────────
 export function ImageIntakePanel({ products, onSaved }: ImageIntakePanelProps) {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const cameraInputRef = useRef<HTMLInputElement>(null);
@@ -77,26 +177,41 @@ export function ImageIntakePanel({ products, onSaved }: ImageIntakePanelProps) {
   const [storagePaths, setStoragePaths] = useState<string[]>([]);
   const [draft, setDraft] = useState<ParsedOrderDraft | null>(null);
 
-  // Keep ref in sync for cleanup
   fileItemsRef.current = fileItems;
 
-  // Revoke all object URLs on unmount
   useEffect(() => {
     return () => { fileItemsRef.current.forEach((i) => URL.revokeObjectURL(i.previewUrl)); };
   }, []);
 
+  const sensors = useSensors(
+    useSensor(PointerSensor, { activationConstraint: { distance: 8 } }),
+  );
+
   const addFiles = useCallback((incoming: FileList | File[]) => {
-    const items: FileItem[] = Array.from(incoming).map((file) => ({
-      file,
-      previewUrl: URL.createObjectURL(file),
-    }));
-    setFileItems((prev) => [...prev, ...items]);
+    setFileItems((prev) => {
+      const available = MAX_FILES - prev.length;
+      if (available <= 0) {
+        toast.warning(`最多 ${MAX_FILES} 張`);
+        return prev;
+      }
+      const arr = Array.from(incoming);
+      if (arr.length > available) {
+        toast.warning(`最多 ${MAX_FILES} 張，已略去多餘圖片`);
+      }
+      const items: FileItem[] = arr.slice(0, available).map((file) => ({
+        id: crypto.randomUUID(),
+        file,
+        previewUrl: URL.createObjectURL(file),
+      }));
+      return [...prev, ...items];
+    });
   }, []);
 
-  function removeFileAt(index: number) {
+  function removeFileById(id: string) {
     setFileItems((prev) => {
-      URL.revokeObjectURL(prev[index].previewUrl);
-      return prev.filter((_, i) => i !== index);
+      const item = prev.find((i) => i.id === id);
+      if (item) URL.revokeObjectURL(item.previewUrl);
+      return prev.filter((i) => i.id !== id);
     });
   }
 
@@ -106,13 +221,15 @@ export function ImageIntakePanel({ products, onSaved }: ImageIntakePanelProps) {
     setStoragePaths([]);
   }
 
-  function handleDragOver(e: React.DragEvent) {
-    e.preventDefault();
-  }
-
-  function handleDrop(e: React.DragEvent) {
-    e.preventDefault();
-    if (e.dataTransfer.files.length > 0) addFiles(e.dataTransfer.files);
+  function handleDragEnd(event: DragEndEvent) {
+    const { active, over } = event;
+    if (over && active.id !== over.id) {
+      setFileItems((items) => {
+        const oldIndex = items.findIndex((i) => i.id === active.id);
+        const newIndex = items.findIndex((i) => i.id === over.id);
+        return arrayMove(items, oldIndex, newIndex);
+      });
+    }
   }
 
   async function handleParse() {
@@ -144,19 +261,18 @@ export function ImageIntakePanel({ products, onSaved }: ImageIntakePanelProps) {
     }
   }
 
-  // Showing OrderDraftEditor after parse
+  // ── Post-parse views ────────────────────────────────────────────────────────
   if (draft) {
+    if (draft.confidence < 0.3) {
+      return <UnreadableErrorScreen quality={draft.image_quality} onRetry={clearAll} />;
+    }
     return (
       <div className="space-y-4 pb-20">
-        {draft.confidence < 0.5 && (
-          <div className="rounded-md border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
-            解析信心較低，請仔細核對
-          </div>
-        )}
         <OrderDraftEditor
           draft={draft}
           rawText={draft.ocr_text ?? ''}
           imageStoragePaths={storagePaths}
+          imageQuality={draft.image_quality ?? undefined}
           products={products}
           onSaved={onSaved}
           onCancel={clearAll}
@@ -165,13 +281,14 @@ export function ImageIntakePanel({ products, onSaved }: ImageIntakePanelProps) {
     );
   }
 
+  // ── Upload UI ───────────────────────────────────────────────────────────────
   return (
     <div className="space-y-4 pb-24">
       {/* Drop zone */}
       <div
         className="flex cursor-pointer flex-col items-center justify-center gap-3 rounded-lg border-2 border-dashed border-zinc-300 bg-zinc-50 p-8 text-center transition-colors hover:border-zinc-400 hover:bg-zinc-100"
-        onDragOver={handleDragOver}
-        onDrop={handleDrop}
+        onDragOver={(e) => e.preventDefault()}
+        onDrop={(e) => { e.preventDefault(); if (e.dataTransfer.files.length > 0) addFiles(e.dataTransfer.files); }}
         onClick={() => fileInputRef.current?.click()}
         role="button"
         tabIndex={0}
@@ -180,7 +297,9 @@ export function ImageIntakePanel({ products, onSaved }: ImageIntakePanelProps) {
         <ImageIcon className="size-8 text-zinc-400" />
         <div>
           <p className="text-sm font-medium text-zinc-600">點擊或拖放圖片</p>
-          <p className="mt-0.5 text-xs text-zinc-400">支援 JPG、PNG、WebP，最大 8 MB</p>
+          <p className="mt-0.5 text-xs text-zinc-400">
+            最多 {MAX_FILES} 張，支援 JPG、PNG、WebP
+          </p>
         </div>
         <input
           ref={fileInputRef}
@@ -213,32 +332,21 @@ export function ImageIntakePanel({ products, onSaved }: ImageIntakePanelProps) {
         onChange={(e) => { if (e.target.files) addFiles(e.target.files); e.target.value = ''; }}
       />
 
-      {/* Preview grid */}
+      {/* Sortable preview grid */}
       {fileItems.length > 0 && (
-        <div className="grid grid-cols-2 gap-3">
-          {fileItems.map((item, index) => (
-            <div key={item.previewUrl} className="relative rounded-lg border border-zinc-200 overflow-hidden bg-white">
-              {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img
-                src={item.previewUrl}
-                alt={item.file.name}
-                className="h-32 w-full object-cover"
-              />
-              <div className="px-2 py-1.5">
-                <p className="truncate text-xs font-medium text-zinc-700">{item.file.name}</p>
-                <p className="text-xs text-zinc-400">{formatBytes(item.file.size)}</p>
-              </div>
-              <button
-                type="button"
-                onClick={() => removeFileAt(index)}
-                className="absolute right-1 top-1 rounded-full bg-black/40 p-0.5 text-white hover:bg-black/60"
-                aria-label="刪除"
-              >
-                <X className="size-3.5" />
-              </button>
+        <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
+          <SortableContext items={fileItems.map((i) => i.id)} strategy={rectSortingStrategy}>
+            <div className="grid grid-cols-2 gap-3">
+              {fileItems.map((item) => (
+                <SortableFileCard
+                  key={item.id}
+                  item={item}
+                  onRemove={() => removeFileById(item.id)}
+                />
+              ))}
             </div>
-          ))}
-        </div>
+          </SortableContext>
+        </DndContext>
       )}
 
       {/* Sticky bottom bar */}
