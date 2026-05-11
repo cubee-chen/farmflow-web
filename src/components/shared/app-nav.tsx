@@ -1,7 +1,7 @@
 'use client';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { Inbox, ListOrdered, Truck, Package, Settings } from 'lucide-react';
+import { Inbox, ListOrdered, Truck, Package, Landmark, Settings } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
 const NAV_ITEMS = [
@@ -9,6 +9,7 @@ const NAV_ITEMS = [
   { href: '/orders', label: '訂單', icon: ListOrdered },
   { href: '/fulfillment', label: '出貨', icon: Truck },
   { href: '/products', label: '商品', icon: Package },
+  { href: '/reconciliation', label: '對帳', icon: Landmark },
   { href: '/settings', label: '設定', icon: Settings },
 ];
 
