@@ -22,6 +22,8 @@ export default async function SettingsPage() {
           phone: farmer.phone,
           bank_name: farmer.bank_name,
           bank_account: farmer.bank_account,
+          line_channel_secret: farmer.line_channel_secret,
+          line_channel_access_token: farmer.line_channel_access_token,
         }}
         templates={templates}
       />

@@ -20,6 +20,8 @@ export const farmers = pgTable("farmers", {
   farm_name: text("farm_name"),
   phone: text("phone"),
   line_official_id: text("line_official_id"),
+  line_channel_secret: text("line_channel_secret"),
+  line_channel_access_token: text("line_channel_access_token"),
   bank_account: text("bank_account"),
   bank_name: text("bank_name"),
   default_shipping_provider: text("default_shipping_provider").default("tcat"),
@@ -67,6 +69,8 @@ export const customers = pgTable(
     default_name: text("default_name"),
     default_address: text("default_address"),
     line_display_name: text("line_display_name"),
+    line_user_id: text("line_user_id"),
+    line_linked_at: timestamp("line_linked_at", { withTimezone: true }),
     notes: text("notes"),
     total_orders: integer("total_orders").default(0),
     total_amount: numeric("total_amount", { precision: 10, scale: 2 }).default("0"),
@@ -261,3 +265,33 @@ export const reconciliationMatches = pgTable(
 
 export type ReconciliationMatch = InferSelectModel<typeof reconciliationMatches>;
 export type NewReconciliationMatch = InferInsertModel<typeof reconciliationMatches>;
+
+export const notificationLogs = pgTable(
+  "notification_logs",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    farmer_id: uuid("farmer_id")
+      .notNull()
+      .references(() => farmers.id, { onDelete: "cascade" }),
+    order_id: uuid("order_id").references(() => orders.id, { onDelete: "set null" }),
+    trigger_event: text("trigger_event").notNull(),
+    channel: text("channel").notNull(),
+    recipient_line_user_id: text("recipient_line_user_id"),
+    rendered_text: text("rendered_text"),
+    status: text("status").notNull().default("queued"),
+    error_message: text("error_message"),
+    sent_at: timestamp("sent_at", { withTimezone: true }),
+    created_at: timestamp("created_at", { withTimezone: true }).defaultNow(),
+  },
+  (table) => [
+    index("notification_logs_farmer_id_created_at_idx").on(
+      table.farmer_id,
+      table.created_at.desc()
+    ),
+    index("notification_logs_order_id_idx").on(table.order_id),
+    index("notification_logs_status_idx").on(table.status),
+  ]
+);
+
+export type NotificationLog = InferSelectModel<typeof notificationLogs>;
+export type NewNotificationLog = InferInsertModel<typeof notificationLogs>;

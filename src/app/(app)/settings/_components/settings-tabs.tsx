@@ -3,12 +3,13 @@
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
 import { Card, CardContent } from '@/components/ui/card';
 import { TemplateCard } from './template-card';
+import { LineNotifyTab } from './line-notify-tab';
 import type { Farmer, NotificationTemplate } from '@/lib/db/schema';
 
 const TEMPLATE_EVENTS = ['confirmed', 'paid', 'shipped'] as const;
 
 interface Props {
-  farmer: Pick<Farmer, 'name' | 'farm_name' | 'phone' | 'bank_name' | 'bank_account'>;
+  farmer: Pick<Farmer, 'name' | 'farm_name' | 'phone' | 'bank_name' | 'bank_account' | 'line_channel_secret' | 'line_channel_access_token'>;
   templates: NotificationTemplate[];
 }
 
@@ -33,6 +34,7 @@ export function SettingsTabs({ farmer, templates }: Props) {
         <TabsTrigger value="info">商家資訊</TabsTrigger>
         <TabsTrigger value="templates">通知模板</TabsTrigger>
         <TabsTrigger value="payment">收款方式</TabsTrigger>
+        <TabsTrigger value="line">LINE 通知</TabsTrigger>
       </TabsList>
 
       <TabsContent value="info">
@@ -66,6 +68,13 @@ export function SettingsTabs({ farmer, templates }: Props) {
             <p className="text-xs text-zinc-400 pt-2">如需修改，請聯繫管理員</p>
           </CardContent>
         </Card>
+      </TabsContent>
+
+      <TabsContent value="line">
+        <LineNotifyTab
+          initialSecret={farmer.line_channel_secret ?? ''}
+          initialToken={farmer.line_channel_access_token ?? ''}
+        />
       </TabsContent>
     </Tabs>
   );
