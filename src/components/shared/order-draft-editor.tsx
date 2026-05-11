@@ -46,6 +46,7 @@ export type ExistingOrderForEdit = {
 interface OrderDraftEditorProps {
   draft?: ParsedOrderDraft;
   rawText?: string;
+  imageStoragePaths?: string[];
   existingOrder?: ExistingOrderForEdit;
   products: Product[];
   onSaved: (orderId: string) => void;
@@ -90,6 +91,7 @@ function ConfidenceBar({ confidence }: { confidence: number }) {
 export function OrderDraftEditor({
   draft,
   rawText,
+  imageStoragePaths,
   existingOrder,
   products,
   onSaved,
@@ -175,6 +177,7 @@ export function OrderDraftEditor({
           confidence: draft!.confidence,
           ambiguities: draft!.ambiguities,
           status: status!,
+          imageStoragePaths,
         });
         if ('error' in result) {
           toast.error(result.error);

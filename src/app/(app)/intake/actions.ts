@@ -16,6 +16,7 @@ export async function saveOrderDraft(
     confidence: number;
     ambiguities: string[];
     status: 'draft' | 'confirmed';
+    imageStoragePaths?: string[];
   },
 ): Promise<{ orderId: string } | { error: string }> {
   let farmer;
@@ -124,8 +125,9 @@ export async function saveOrderDraft(
           farmer_id: farmerId,
           customer_id: customerId,
           order_number: orderNumber,
-          intake_mode: meta.rawText ? 'paste' : 'manual',
+          intake_mode: meta.imageStoragePaths?.length ? 'image' : meta.rawText ? 'paste' : 'manual',
           raw_text: meta.rawText || null,
+          raw_image_urls: meta.imageStoragePaths?.length ? meta.imageStoragePaths : undefined,
           parse_confidence: meta.rawText ? String(meta.confidence) : null,
           parse_ambiguities: meta.ambiguities.length ? meta.ambiguities : null,
           recipient_name: data.recipient_name,
