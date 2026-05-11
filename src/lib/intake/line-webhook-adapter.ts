@@ -36,6 +36,25 @@ const GROUP_TIMEOUT_MS = 30_000;
 
 // ── Helpers ─────────────────────────────────────────────────────────────────────
 
+// Drizzle wraps the underlying postgres-js error in `cause`; surface the PG
+// fields so error_message contains the actionable reason, not just SQL + params.
+function formatErrorWithCause(err: unknown): string {
+  if (!(err instanceof Error)) return String(err);
+  const parts: string[] = [err.message];
+  const cause = (err as { cause?: unknown }).cause;
+  if (cause instanceof Error) {
+    parts.push(`Cause: ${cause.message}`);
+    const pg = cause as unknown as Record<string, unknown>;
+    for (const key of ['code', 'severity', 'detail', 'hint', 'table', 'column', 'constraint']) {
+      const v = pg[key];
+      if (v) parts.push(`  ${key}: ${String(v)}`);
+    }
+  } else if (cause !== undefined && cause !== null) {
+    parts.push(`Cause: ${String(cause)}`);
+  }
+  return parts.join('\n');
+}
+
 async function downloadLineImage(messageId: string, token: string): Promise<Buffer> {
   const res = await fetch(`https://api-data.line.me/v2/bot/message/${messageId}/content`, {
     headers: { Authorization: `Bearer ${token}` },
@@ -294,7 +313,7 @@ export async function processLineEvent(
         .where(eq(lineWebhookEvents.id, eventId));
     }
   } catch (err) {
-    const msg = err instanceof Error ? err.message : String(err);
+    const msg = formatErrorWithCause(err);
     console.error(`[webhook] event ${eventId} failed:`, msg);
     await db
       .update(lineWebhookEvents)
