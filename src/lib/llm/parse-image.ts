@@ -104,7 +104,17 @@ export async function parseOrderFromImages(
 
   let json: unknown;
   try {
-    const text = rawContent.text.replace(/^```(?:json)?\n?/, '').replace(/\n?```$/, '').trim();
+    // Extract JSON: prefer code-fence content, fall back to first { ... last }
+    const raw = rawContent.text;
+    const fenceMatch = raw.match(/```(?:json)?\s*([\s\S]*?)\s*```/);
+    let text: string;
+    if (fenceMatch) {
+      text = fenceMatch[1].trim();
+    } else {
+      const start = raw.indexOf('{');
+      const end = raw.lastIndexOf('}');
+      text = start !== -1 && end > start ? raw.slice(start, end + 1) : raw.trim();
+    }
     json = JSON.parse(text);
   } catch (err) {
     console.error('[vision-parse] JSON.parse failed:', rawContent.text, err);
