@@ -1,6 +1,5 @@
 'use client';
 import { useRef, useEffect, useState, useCallback } from 'react';
-import { useRouter } from 'next/navigation';
 import { ImageIcon, X, Camera, Loader2, Sparkles } from 'lucide-react';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
@@ -58,13 +57,17 @@ async function uploadBlob(blob: Blob): Promise<string> {
   const fd = new FormData();
   fd.append('file', blob, 'image.jpg');
   const res = await fetch('/api/intake/upload-image', { method: 'POST', body: fd });
-  if (!res.ok) throw new Error(`Upload failed: ${res.status}`);
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({})) as { error?: string };
+    const msg = body.error ?? `HTTP ${res.status}`;
+    console.error('[upload-image] server error:', msg);
+    throw new Error(msg);
+  }
   const data = await res.json();
   return data.storagePath as string;
 }
 
 export function ImageIntakePanel({ products, onSaved }: ImageIntakePanelProps) {
-  const router = useRouter();
   const fileInputRef = useRef<HTMLInputElement>(null);
   const cameraInputRef = useRef<HTMLInputElement>(null);
   const fileItemsRef = useRef<FileItem[]>([]);
@@ -133,8 +136,9 @@ export function ImageIntakePanel({ products, onSaved }: ImageIntakePanelProps) {
       const data: ParsedOrderDraft & { parsed_at: string } = await res.json();
       setDraft(data);
     } catch (err) {
-      console.error('[image-intake]', err);
-      toast.error('解析失敗，請改用文字貼上或手動建立');
+      const msg = err instanceof Error ? err.message : String(err);
+      console.error('[image-intake]', msg);
+      toast.error(`上傳失敗：${msg}，請改用文字貼上或手動建立`);
     } finally {
       setProcessing(false);
     }

@@ -26,12 +26,14 @@ export async function POST(req: NextRequest) {
 
   const now = new Date();
   const yyyymm = `${now.getUTCFullYear()}${String(now.getUTCMonth() + 1).padStart(2, '0')}`;
-  const path = `${farmer.id}/${yyyymm}/${randomUUID()}.${extFromMime(file.type)}`;
+  const contentType = file.type || 'image/jpeg';
+  const path = `${farmer.id}/${yyyymm}/${randomUUID()}.${extFromMime(contentType)}`;
 
+  console.log('[upload-image] uploading', { path, contentType, size: file.size });
   const supabase = await createServerSupabase();
   const { error } = await supabase.storage
     .from('intake-images')
-    .upload(path, file, { contentType: file.type });
+    .upload(path, file, { contentType });
 
   if (error) {
     console.error('[upload-image]', error);

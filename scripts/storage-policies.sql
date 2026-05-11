@@ -13,19 +13,19 @@ CREATE POLICY "farmer_uploads_own_intake_images" ON storage.objects
   FOR INSERT TO authenticated
   WITH CHECK (
     bucket_id = 'intake-images'
-    AND (storage.foldername(name))[1] = current_farmer_id()::text
+    AND (storage.foldername(name))[1] = public.current_farmer_id()::text
   );
 
 CREATE POLICY "farmer_reads_own_intake_images" ON storage.objects
   FOR SELECT TO authenticated
   USING (
     bucket_id = 'intake-images'
-    AND (storage.foldername(name))[1] = current_farmer_id()::text
+    AND (storage.foldername(name))[1] = public.current_farmer_id()::text
   );
 
 CREATE POLICY "farmer_deletes_own_intake_images" ON storage.objects
   FOR DELETE TO authenticated
   USING (
     bucket_id = 'intake-images'
-    AND (storage.foldername(name))[1] = current_farmer_id()::text
+    AND (storage.foldername(name))[1] = public.current_farmer_id()::text
   );
