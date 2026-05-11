@@ -96,7 +96,7 @@ export const orders = pgTable(
       .notNull()
       .references(() => farmers.id),
     customer_id: uuid("customer_id").references(() => customers.id),
-    order_number: text("order_number").unique(),
+    order_number: text("order_number"),
     intake_mode: text("intake_mode").notNull(),
     raw_text: text("raw_text"),
     parse_confidence: numeric("parse_confidence", { precision: 3, scale: 2 }),
@@ -127,6 +127,7 @@ export const orders = pgTable(
     index("orders_farmer_id_status_idx").on(table.farmer_id, table.status),
     index("orders_farmer_id_ship_date_idx").on(table.farmer_id, table.ship_date),
     index("orders_farmer_id_created_at_idx").on(table.farmer_id, table.created_at),
+    uniqueIndex("orders_farmer_id_order_number_idx").on(table.farmer_id, table.order_number),
   ]
 );
 

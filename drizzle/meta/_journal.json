@@ -43,6 +43,13 @@
       "when": 1778485603363,
       "tag": "0005_typical_beast",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1778491802461,
+      "tag": "0006_wooden_hercules",
+      "breakpoints": true
     }
   ]
 }
