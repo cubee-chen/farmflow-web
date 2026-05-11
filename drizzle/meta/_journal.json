@@ -8,6 +8,13 @@
       "when": 1778163923245,
       "tag": "0000_abnormal_spencer_smythe",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1778473570254,
+      "tag": "0001_panoramic_radioactive_man",
+      "breakpoints": true
     }
   ]
 }

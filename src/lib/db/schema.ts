@@ -15,6 +15,7 @@ import type { InferSelectModel, InferInsertModel } from "drizzle-orm";
 
 export const farmers = pgTable("farmers", {
   id: uuid("id").primaryKey().defaultRandom(),
+  authUserId: uuid("auth_user_id").unique(),
   name: text("name").notNull(),
   farm_name: text("farm_name"),
   phone: text("phone"),
