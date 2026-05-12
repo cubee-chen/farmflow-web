@@ -3,7 +3,6 @@ import { useEffect, useRef } from 'react';
 import { useInfiniteQuery } from '@tanstack/react-query';
 import { OrderCard } from './order-card';
 import type { OrderWithItems } from '@/lib/queries/orders';
-import Link from 'next/link';
 
 interface Props {
   initialOrders: OrderWithItems[];
@@ -58,12 +57,7 @@ export function OrdersInfiniteList({ initialOrders, initialHasMore, status, q, i
 
   if (allOrders.length === 0) {
     return (
-      <div className="py-20 text-center text-zinc-500">
-        <p className="mb-3">目前沒有訂單</p>
-        <Link href="/intake" className="text-blue-600 underline underline-offset-2">
-          去 /intake 接第一筆吧
-        </Link>
-      </div>
+      <div className="py-16 text-center text-sm text-zinc-400">暫無訂單</div>
     );
   }
 

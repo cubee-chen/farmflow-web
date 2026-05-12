@@ -2,15 +2,16 @@
 import { useRouter, usePathname } from 'next/navigation';
 import { useCallback, useRef, useTransition } from 'react';
 import { Input } from '@/components/ui/input';
+import type { StatusCounts } from '@/lib/queries/orders';
 
-const STATUS_CHIPS = [
-  { label: '全部', value: '' },
-  { label: '待確認', value: 'draft' },
-  { label: '已確認', value: 'confirmed' },
-  { label: '待出貨', value: 'ready_to_ship' },
-  { label: '備貨中', value: 'packing' },
-  { label: '已出貨', value: 'shipped' },
-  { label: '已完成', value: 'completed' },
+const STATUS_CHIPS: { label: string; value: string; countKey: keyof StatusCounts }[] = [
+  { label: '全部', value: '', countKey: 'all' },
+  { label: '待確認', value: 'draft', countKey: 'draft' },
+  { label: '已確認', value: 'confirmed', countKey: 'confirmed' },
+  { label: '待出貨', value: 'ready_to_ship', countKey: 'ready_to_ship' },
+  { label: '備貨中', value: 'packing', countKey: 'packing' },
+  { label: '已出貨', value: 'shipped', countKey: 'shipped' },
+  { label: '已完成', value: 'completed', countKey: 'completed' },
 ];
 
 const INTAKE_CHIPS = [
@@ -22,9 +23,10 @@ interface Props {
   status: string;
   q: string;
   intake: string;
+  counts: StatusCounts;
 }
 
-export function OrdersFilters({ status, q, intake }: Props) {
+export function OrdersFilters({ status, q, intake, counts }: Props) {
   const router = useRouter();
   const pathname = usePathname();
   const [, startTransition] = useTransition();
@@ -52,6 +54,7 @@ export function OrdersFilters({ status, q, intake }: Props) {
       <div className="flex gap-2 overflow-x-auto pb-1 scrollbar-none">
         {STATUS_CHIPS.map((chip) => {
           const active = status === chip.value && !intake;
+          const n = counts[chip.countKey];
           return (
             <button
               key={chip.value}
@@ -61,6 +64,9 @@ export function OrdersFilters({ status, q, intake }: Props) {
               }`}
             >
               {chip.label}
+              <span className={`ml-1 text-xs ${active ? 'text-zinc-300' : 'text-zinc-400'}`}>
+                {n}
+              </span>
             </button>
           );
         })}

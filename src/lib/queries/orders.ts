@@ -1,4 +1,4 @@
-import { and, desc, eq, ilike, inArray, or } from 'drizzle-orm';
+import { and, desc, eq, ilike, inArray, or, sql } from 'drizzle-orm';
 import { db } from '@/lib/db';
 import { orders, orderItems, products } from '@/lib/db/schema';
 import type { Order } from '@/lib/db/schema';
@@ -6,6 +6,16 @@ import type { Order } from '@/lib/db/schema';
 export type OrderWithItems = Order & {
   items: { quantity: number; display_name: string }[];
 };
+
+export interface StatusCounts {
+  all: number;
+  draft: number;
+  confirmed: number;
+  ready_to_ship: number;
+  packing: number;
+  shipped: number;
+  completed: number;
+}
 
 const PAGE_SIZE = 50;
 
@@ -86,4 +96,45 @@ export async function listOrders({
     orders: pageRows.map((o) => ({ ...o, items: itemsByOrderId[o.id] ?? [] })),
     hasMore,
   };
+}
+
+// Per-status counts for the filter chips. `ready_to_ship` is a derived view
+// (status confirmed/packing AND payment_status=paid) so we count it explicitly
+// rather than relying on a status enum value.
+export async function getOrderStatusCounts(farmerId: string): Promise<StatusCounts> {
+  const rows = await db
+    .select({
+      status: orders.status,
+      payment_status: orders.payment_status,
+      n: sql<number>`cast(count(*) as integer)`,
+    })
+    .from(orders)
+    .where(eq(orders.farmer_id, farmerId))
+    .groupBy(orders.status, orders.payment_status);
+
+  const counts: StatusCounts = {
+    all: 0,
+    draft: 0,
+    confirmed: 0,
+    ready_to_ship: 0,
+    packing: 0,
+    shipped: 0,
+    completed: 0,
+  };
+
+  for (const r of rows) {
+    const n = r.n ?? 0;
+    counts.all += n;
+    if (r.status === 'draft') counts.draft += n;
+    else if (r.status === 'confirmed') counts.confirmed += n;
+    else if (r.status === 'packing') counts.packing += n;
+    else if (r.status === 'shipped') counts.shipped += n;
+    else if (r.status === 'completed') counts.completed += n;
+
+    if ((r.status === 'confirmed' || r.status === 'packing') && r.payment_status === 'paid') {
+      counts.ready_to_ship += n;
+    }
+  }
+
+  return counts;
 }

@@ -17,7 +17,6 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog';
 import { OrderDraftEditor, type ExistingOrderForEdit } from '@/components/shared/order-draft-editor';
-import { StatusActions } from './status-actions';
 import { NextStepBar } from './next-step-bar';
 import { NotificationSection } from './notification-section';
 import { deleteOrder } from '@/app/(app)/orders/actions';
@@ -365,14 +364,7 @@ export function OrderDetailClient({ order, items, events, products, notification
           <ImageGallery paths={order.raw_image_urls} />
         )}
 
-      {/* Section 3: Status actions */}
-      <StatusActions
-        orderId={order.id}
-        status={order.status}
-        paymentStatus={order.payment_status ?? 'unpaid'}
-      />
-
-      {/* Section 4: Notification text */}
+      {/* Section 3: Notification text */}
       <NotificationSection
         initialText={notificationText}
         recipientName={order.recipient_name}

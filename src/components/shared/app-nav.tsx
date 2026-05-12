@@ -4,14 +4,15 @@ import { usePathname } from 'next/navigation';
 import { Inbox, ListOrdered, Truck, Landmark, AlertTriangle } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
-// Primary nav follows the daily workflow order: 接單 → 訂單 → 出貨 → 對帳.
-// 商品/客戶/異常 are less-frequent surfaces; 商品/客戶 moved into the FarmerMenu
-// dropdown so the bottom tab bar on mobile stays one-thumb wide.
+// Primary nav follows the actual daily workflow: 接單 → 訂單 → 對帳 → 出貨.
+// 對帳在出貨之前 because farmers download the 黑貓 Excel for paid orders, so
+// reconciliation must finish first. 商品/客戶 moved into the FarmerMenu dropdown
+// so the mobile bottom tab bar stays one-thumb wide.
 const NAV_ITEMS = [
   { href: '/intake', label: '接單', icon: Inbox },
   { href: '/orders', label: '訂單', icon: ListOrdered },
-  { href: '/fulfillment', label: '出貨', icon: Truck },
   { href: '/reconciliation', label: '對帳', icon: Landmark },
+  { href: '/fulfillment', label: '出貨', icon: Truck },
   { href: '/exceptions', label: '異常', icon: AlertTriangle },
 ];
 
