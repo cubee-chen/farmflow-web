@@ -48,8 +48,9 @@ export function StatusActions({ orderId, status, paymentStatus }: Props) {
     if (paymentStatus !== 'paid') actions.push('pay');
     actions.push('ship');
   }
+  if (status === 'packing') actions.push('ship');
   if (status === 'shipped') actions.push('complete');
-  if (['draft', 'confirmed', 'shipped'].includes(status)) actions.push('cancel');
+  if (['draft', 'confirmed', 'packing', 'shipped'].includes(status)) actions.push('cancel');
 
   if (actions.length === 0) return null;
 

@@ -1,4 +1,4 @@
-import { and, asc, eq, inArray, sql } from 'drizzle-orm';
+import { and, asc, eq, inArray, isNull, or, sql } from 'drizzle-orm';
 import { db } from '@/lib/db';
 import { orders, orderItems, products } from '@/lib/db/schema';
 import type { Product } from '@/lib/db/schema';
@@ -52,8 +52,12 @@ export async function getShippingSummary(
       .where(
         and(
           eq(orders.farmer_id, farmerId),
-          eq(orders.ship_date, date),
-          eq(orders.status, 'confirmed')
+          inArray(orders.status, ['confirmed', 'packing']),
+          // Show paid-but-no-ship-date orders alongside orders explicitly
+          // scheduled for `date`. This way an order moves into the farmer's
+          // packing view the moment reconciliation confirms it, even before
+          // the Excel export has assigned a ship_date.
+          or(eq(orders.ship_date, date), isNull(orders.ship_date))
         )
       )
       .orderBy(

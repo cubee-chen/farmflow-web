@@ -8,6 +8,7 @@ const STATUS_CHIPS = [
   { label: '待確認', value: 'draft' },
   { label: '已確認', value: 'confirmed' },
   { label: '待出貨', value: 'ready_to_ship' },
+  { label: '備貨中', value: 'packing' },
   { label: '已出貨', value: 'shipped' },
   { label: '已完成', value: 'completed' },
 ];

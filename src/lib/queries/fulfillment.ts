@@ -13,20 +13,34 @@ export type FulfillmentOrder = Order & {
   items: FulfillmentItem[];
 };
 
+export type FulfillmentStage = 'todo' | 'packing' | 'all';
+
+// 'todo'    — confirmed (post-recon, awaiting Excel download)
+// 'packing' — Excel downloaded, awaiting handoff to courier
+// 'all'     — both, optionally including unpaid (for the "include unpaid" toggle)
 export async function listFulfillmentOrders({
   farmerId,
+  stage = 'todo',
   includeUnpaid = false,
 }: {
   farmerId: string;
+  stage?: FulfillmentStage;
   includeUnpaid?: boolean;
 }): Promise<FulfillmentOrder[]> {
+  const statusFilter =
+    stage === 'packing'
+      ? eq(orders.status, 'packing')
+      : stage === 'all'
+        ? inArray(orders.status, ['confirmed', 'packing'])
+        : eq(orders.status, 'confirmed');
+
   const rows = await db
     .select()
     .from(orders)
     .where(
       and(
         eq(orders.farmer_id, farmerId),
-        eq(orders.status, 'confirmed'),
+        statusFilter,
         includeUnpaid ? undefined : eq(orders.payment_status, 'paid')
       )
     )

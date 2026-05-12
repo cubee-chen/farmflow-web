@@ -25,6 +25,7 @@ import type { Order, OrderEvent, Product } from '@/lib/db/schema';
 const STATUS_LABEL: Record<string, string> = {
   draft: '待確認',
   confirmed: '已確認',
+  packing: '備貨中',
   shipped: '已出貨',
   completed: '已完成',
   cancelled: '已取消',
@@ -33,6 +34,7 @@ const STATUS_LABEL: Record<string, string> = {
 const STATUS_CLASS: Record<string, string> = {
   draft: 'bg-zinc-200 text-zinc-700 hover:bg-zinc-200',
   confirmed: 'bg-blue-100 text-blue-700 hover:bg-blue-100',
+  packing: 'bg-amber-100 text-amber-700 hover:bg-amber-100',
   shipped: 'bg-green-100 text-green-700 hover:bg-green-100',
   completed: 'bg-zinc-900 text-white hover:bg-zinc-900',
   cancelled: 'bg-red-100 text-red-700 hover:bg-red-100',
@@ -43,7 +45,8 @@ const EVENT_ICON: Record<string, string> = {
   confirmed: '✅',
   updated: '✏️',
   paid: '💰',
-  shipped: '📦',
+  packing: '📦',
+  shipped: '🚚',
   completed: '🎉',
   cancelled: '❌',
   payment_reply_received: '💬',
@@ -54,6 +57,7 @@ const EVENT_LABEL: Record<string, string> = {
   confirmed: '確認訂單',
   updated: '訂單更新',
   paid: '確認收款',
+  packing: '開始備貨',
   shipped: '標記已出貨',
   completed: '訂單完成',
   cancelled: '取消訂單',

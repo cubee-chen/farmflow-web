@@ -1,4 +1,4 @@
-import { and, desc, eq, gte, ilike, inArray, or } from 'drizzle-orm';
+import { and, desc, eq, ilike, inArray, or } from 'drizzle-orm';
 import { db } from '@/lib/db';
 import { orders, orderItems, products } from '@/lib/db/schema';
 import type { Order } from '@/lib/db/schema';
@@ -10,15 +10,12 @@ export type OrderWithItems = Order & {
 const PAGE_SIZE = 50;
 
 function buildWhere(farmerId: string, status: string, q: string, intake: string) {
-  const today = new Date().toISOString().split('T')[0];
-
   return and(
     eq(orders.farmer_id, farmerId),
     status === 'ready_to_ship'
       ? and(
-          eq(orders.status, 'confirmed'),
-          eq(orders.payment_status, 'paid'),
-          gte(orders.ship_date, today)
+          inArray(orders.status, ['confirmed', 'packing']),
+          eq(orders.payment_status, 'paid')
         )
       : status && status !== 'all'
         ? eq(orders.status, status)

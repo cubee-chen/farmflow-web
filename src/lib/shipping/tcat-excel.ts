@@ -49,9 +49,13 @@ export async function generateTcatBatchExcel(
   ws.views = [{ state: 'frozen', ySplit: 1 }];
 
   for (const order of orders) {
-    const itemSummary = order.items
-      .map((i) => `${i.display_name}x${i.quantity}`)
-      .join('、');
+    // 黑貓批次表的「商品名稱」欄為品名，「件數」欄已分開帶總箱數。
+    // 單品項時只寫品名（避免出現「大箱x3」這種冗餘）；多品項才合併寫
+    // 「大箱×2、小箱×1」讓貨運人員一眼看出組合。
+    const itemSummary =
+      order.items.length === 1
+        ? order.items[0].display_name
+        : order.items.map((i) => `${i.display_name}×${i.quantity}`).join('、');
     const totalWeight = order.items.reduce(
       (sum, i) => sum + i.quantity * (i.weight_g ?? 0),
       0
