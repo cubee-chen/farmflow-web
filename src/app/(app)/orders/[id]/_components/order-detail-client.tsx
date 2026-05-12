@@ -18,6 +18,7 @@ import {
 } from '@/components/ui/dialog';
 import { OrderDraftEditor, type ExistingOrderForEdit } from '@/components/shared/order-draft-editor';
 import { StatusActions } from './status-actions';
+import { NextStepBar } from './next-step-bar';
 import { NotificationSection } from './notification-section';
 import { deleteOrder } from '@/app/(app)/orders/actions';
 import type { Order, OrderEvent, Product } from '@/lib/db/schema';
@@ -245,7 +246,7 @@ export function OrderDetailClient({ order, items, events, products, notification
   }
 
   return (
-    <div className="p-4 space-y-4 pb-10">
+    <div className="p-4 space-y-4 pb-32 lg:pb-24">
       {/* Section 1: Header */}
       <div className="space-y-2">
         <div className="flex items-center gap-2 flex-wrap">
@@ -451,6 +452,12 @@ export function OrderDetailClient({ order, items, events, products, notification
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      <NextStepBar
+        orderId={order.id}
+        status={order.status}
+        paymentStatus={order.payment_status ?? 'unpaid'}
+      />
     </div>
   );
 }

@@ -2,7 +2,7 @@
 
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { LogOut, Settings, ChevronDown } from 'lucide-react';
+import { LogOut, Settings, ChevronDown, Package, Users } from 'lucide-react';
 import { createBrowserSupabase } from '@/lib/supabase/browser';
 import {
   DropdownMenu,
@@ -55,6 +55,18 @@ export function FarmerMenu({ farmName, name }: FarmerMenuProps) {
             <p className="text-xs text-zinc-500 truncate">{name}</p>
           </div>
           <DropdownMenuSeparator />
+          <DropdownMenuItem asChild>
+            <a href="/products" className="flex items-center gap-2 cursor-pointer">
+              <Package className="h-4 w-4" />
+              商品管理
+            </a>
+          </DropdownMenuItem>
+          <DropdownMenuItem asChild>
+            <a href="/customers" className="flex items-center gap-2 cursor-pointer">
+              <Users className="h-4 w-4" />
+              客戶名單
+            </a>
+          </DropdownMenuItem>
           <DropdownMenuItem asChild>
             <a href="/settings" className="flex items-center gap-2 cursor-pointer">
               <Settings className="h-4 w-4" />
