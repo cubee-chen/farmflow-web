@@ -52,8 +52,12 @@ interface LineHistoryItem {
 
 interface Props {
   customer: Customer;
-  orders: Pick<Order, 'id' | 'order_number' | 'status' | 'total_amount' | 'created_at'>[];
+  orders: Pick<
+    Order,
+    'id' | 'order_number' | 'status' | 'total_amount' | 'created_at' | 'bank_last_5'
+  >[];
   lineHistory: LineHistoryItem[];
+  bankLast5History: string[];
 }
 
 function previewLineMessage(payload: unknown): string {
@@ -71,7 +75,7 @@ function previewLineMessage(payload: unknown): string {
   return `[${type ?? 'unknown'}]`;
 }
 
-export function CustomerDetailClient({ customer, orders, lineHistory }: Props) {
+export function CustomerDetailClient({ customer, orders, lineHistory, bankLast5History }: Props) {
   const router = useRouter();
   const [linkOpen, setLinkOpen] = useState(false);
   const [inputUserId, setInputUserId] = useState('');
@@ -131,6 +135,20 @@ export function CustomerDetailClient({ customer, orders, lineHistory }: Props) {
           <InfoRow label="備註">{customer.notes ?? '—'}</InfoRow>
           <InfoRow label="累計訂單">{customer.total_orders ?? 0} 筆</InfoRow>
           <InfoRow label="累計金額">NT${Number(customer.total_amount ?? 0).toLocaleString()}</InfoRow>
+          {bankLast5History.length > 0 && (
+            <InfoRow label="曾用末5碼">
+              <span className="flex flex-wrap gap-1">
+                {bankLast5History.map((code) => (
+                  <span
+                    key={code}
+                    className="font-mono text-xs bg-zinc-100 text-zinc-700 rounded px-1.5 py-0.5"
+                  >
+                    {code}
+                  </span>
+                ))}
+              </span>
+            </InfoRow>
+          )}
         </CardContent>
       </Card>
 

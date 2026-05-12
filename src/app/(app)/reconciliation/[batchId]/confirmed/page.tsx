@@ -1,6 +1,6 @@
 import { notFound } from 'next/navigation';
 import Link from 'next/link';
-import { and, asc, eq, inArray, isNotNull } from 'drizzle-orm';
+import { and, asc, desc, eq, inArray, isNotNull } from 'drizzle-orm';
 import { ChevronLeft } from 'lucide-react';
 import { db } from '@/lib/db';
 import {
@@ -8,7 +8,9 @@ import {
   bankTransactions,
   reconciliationMatches,
   orders,
+  customers,
   notificationTemplates,
+  notificationLogs,
 } from '@/lib/db/schema';
 import { getCurrentFarmer } from '@/lib/auth/require-farmer';
 import { renderTemplate } from '@/lib/notification/render';
@@ -48,10 +50,12 @@ export default async function ConfirmedSummaryPage({ params }: Props) {
       orderNumber: orders.order_number,
       recipientName: orders.recipient_name,
       totalAmount: orders.total_amount,
+      customerLineUserId: customers.line_user_id,
     })
     .from(reconciliationMatches)
     .innerJoin(bankTransactions, eq(reconciliationMatches.bank_transaction_id, bankTransactions.id))
     .innerJoin(orders, eq(reconciliationMatches.order_id, orders.id))
+    .leftJoin(customers, eq(orders.customer_id, customers.id))
     .where(
       and(
         eq(bankTransactions.batch_id, batchId),
@@ -61,18 +65,55 @@ export default async function ConfirmedSummaryPage({ params }: Props) {
     )
     .orderBy(asc(bankTransactions.tx_date));
 
-  const templateRows = await db
+  const orderIds = matchRows.map((r) => r.orderId as string);
+
+  // Find the most recent 'paid' notification log per order so the UI can show
+  // whether the auto-dispatch (from confirmReconciliationBatch) succeeded.
+  const logRows = orderIds.length
+    ? await db
+        .select({
+          order_id: notificationLogs.order_id,
+          status: notificationLogs.status,
+          error_message: notificationLogs.error_message,
+          sent_at: notificationLogs.sent_at,
+          created_at: notificationLogs.created_at,
+        })
+        .from(notificationLogs)
+        .where(
+          and(
+            inArray(notificationLogs.order_id, orderIds),
+            eq(notificationLogs.trigger_event, 'paid')
+          )
+        )
+        .orderBy(desc(notificationLogs.created_at))
+    : [];
+
+  const latestLogByOrder = new Map<
+    string,
+    { status: string; error_message: string | null; sent_at: Date | null }
+  >();
+  for (const log of logRows) {
+    if (!log.order_id) continue;
+    if (!latestLogByOrder.has(log.order_id)) {
+      latestLogByOrder.set(log.order_id, {
+        status: log.status,
+        error_message: log.error_message,
+        sent_at: log.sent_at,
+      });
+    }
+  }
+
+  const [paidTemplate] = await db
     .select()
     .from(notificationTemplates)
     .where(
       and(
         eq(notificationTemplates.farmer_id, farmer.id),
+        eq(notificationTemplates.trigger_event, 'paid'),
         eq(notificationTemplates.is_active, true)
       )
-    );
-
-  const paidTemplate =
-    templateRows.find((t) => t.trigger_event === 'paid') ?? templateRows[0] ?? null;
+    )
+    .limit(1);
 
   const confirmedOrders = matchRows.map((r) => {
     const notificationText = paidTemplate
@@ -90,6 +131,8 @@ export default async function ConfirmedSummaryPage({ params }: Props) {
         })
       : buildDefaultText(r.recipientName, r.txAmount);
 
+    const log = latestLogByOrder.get(r.orderId as string) ?? null;
+
     return {
       matchId: r.matchId,
       orderId: r.orderId as string,
@@ -98,6 +141,10 @@ export default async function ConfirmedSummaryPage({ params }: Props) {
       txAmount: r.txAmount,
       txDate: r.txDate,
       notificationText,
+      hasLineBinding: !!r.customerLineUserId,
+      pushStatus: log?.status ?? null,
+      pushError: log?.error_message ?? null,
+      pushSentAt: log?.sent_at ? log.sent_at.toISOString() : null,
     };
   });
 

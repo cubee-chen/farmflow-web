@@ -46,6 +46,7 @@ const EVENT_ICON: Record<string, string> = {
   shipped: '📦',
   completed: '🎉',
   cancelled: '❌',
+  payment_reply_received: '💬',
 };
 
 const EVENT_LABEL: Record<string, string> = {
@@ -56,6 +57,7 @@ const EVENT_LABEL: Record<string, string> = {
   shipped: '標記已出貨',
   completed: '訂單完成',
   cancelled: '取消訂單',
+  payment_reply_received: '客戶回覆付款',
 };
 
 const DELIVERY_PREF_LABEL: Record<string, string> = {

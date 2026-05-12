@@ -17,6 +17,11 @@ import type { ParsedOrderDraft } from '@/lib/llm/types';
 import { createServiceSupabase } from '@/lib/supabase/server';
 import { fetchLineProfile } from './line-profile';
 import { linkLineUserToCustomer } from '@/lib/notify/link-customer';
+import {
+  applyPaymentReply,
+  classifyAsPaymentReply,
+  looksLikePaymentReply,
+} from './payment-reply';
 
 // ── LINE event types ────────────────────────────────────────────────────────────
 
@@ -406,12 +411,56 @@ export async function processLineEvent(
 
     if (messageType === 'text') {
       const rawText = message?.text as string ?? '';
+
+      // Pre-check: short customer replies like "已轉帳" or "末5碼：59681" must
+      // not become draft orders. Regex catches the obvious cases cheaply;
+      // LLM second-pass disambiguates borderline messages.
+      if (looksLikePaymentReply(rawText) && (await classifyAsPaymentReply(rawText))) {
+        const result = await applyPaymentReply({
+          farmerId: farmer.id,
+          customerId,
+          rawText,
+        });
+
+        const note =
+          result.kind === 'updated'
+            ? `payment_reply: order ${result.orderNumber ?? result.orderId}${result.last5 ? `, last5=${result.last5}` : ''}`
+            : `payment_reply ignored: ${result.reason}`;
+
+        await db
+          .update(lineWebhookEvents)
+          .set({
+            processing_status: result.kind === 'updated' ? 'processed' : 'ignored',
+            error_message: note,
+          })
+          .where(eq(lineWebhookEvents.id, eventId));
+        return;
+      }
+
       const farmerProducts = await db
         .select()
         .from(products)
         .where(eq(products.farmer_id, farmer.id));
 
       const draft = await parseOrderText(rawText, farmer, farmerProducts);
+
+      // Safety net: if the parser found no items, no address, and is unsure,
+      // it almost certainly is not a real order (e.g. a stray comment) —
+      // skip rather than litter the order list.
+      if (
+        draft.items.length === 0 &&
+        !draft.recipient_address &&
+        draft.confidence < 0.3
+      ) {
+        await db
+          .update(lineWebhookEvents)
+          .set({
+            processing_status: 'ignored',
+            error_message: 'no order content detected',
+          })
+          .where(eq(lineWebhookEvents.id, eventId));
+        return;
+      }
 
       await createDraftOrder({
         farmerId: farmer.id,
