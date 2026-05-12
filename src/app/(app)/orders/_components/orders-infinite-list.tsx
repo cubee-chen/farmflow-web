@@ -2,7 +2,7 @@
 import { useEffect, useRef } from 'react';
 import { useInfiniteQuery } from '@tanstack/react-query';
 import { OrderCard } from './order-card';
-import type { OrderWithItems } from '@/lib/queries/orders';
+import type { OrderWithItems, SortDirection } from '@/lib/queries/orders';
 
 interface Props {
   initialOrders: OrderWithItems[];
@@ -10,24 +10,39 @@ interface Props {
   status: string;
   q: string;
   intake: string;
+  sort: SortDirection;
 }
 
-async function fetchPage(status: string, q: string, intake: string, page: number) {
+async function fetchPage(
+  status: string,
+  q: string,
+  intake: string,
+  sort: SortDirection,
+  page: number,
+) {
   const params = new URLSearchParams({ page: String(page) });
   if (status) params.set('status', status);
   if (q) params.set('q', q);
   if (intake) params.set('intake', intake);
+  if (sort !== 'desc') params.set('sort', sort);
   const res = await fetch(`/api/orders/list?${params}`);
   if (!res.ok) throw new Error('Failed to load orders');
   return res.json() as Promise<{ orders: OrderWithItems[]; hasMore: boolean }>;
 }
 
-export function OrdersInfiniteList({ initialOrders, initialHasMore, status, q, intake }: Props) {
+export function OrdersInfiniteList({
+  initialOrders,
+  initialHasMore,
+  status,
+  q,
+  intake,
+  sort,
+}: Props) {
   const sentinelRef = useRef<HTMLDivElement>(null);
 
   const { data, fetchNextPage, hasNextPage, isFetchingNextPage } = useInfiniteQuery({
-    queryKey: ['orders', status, q, intake],
-    queryFn: ({ pageParam }) => fetchPage(status, q, intake, pageParam as number),
+    queryKey: ['orders', status, q, intake, sort],
+    queryFn: ({ pageParam }) => fetchPage(status, q, intake, sort, pageParam as number),
     initialPageParam: 2,
     getNextPageParam: (lastPage, _, lastPageParam) =>
       lastPage.hasMore ? (lastPageParam as number) + 1 : undefined,

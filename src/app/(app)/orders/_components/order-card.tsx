@@ -1,8 +1,26 @@
 import Link from 'next/link';
 import { FileText, ImageIcon, MessageCircle, Pencil } from 'lucide-react';
+import { formatDistanceToNow } from 'date-fns';
+import { zhTW } from 'date-fns/locale';
 import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import type { OrderWithItems } from '@/lib/queries/orders';
+
+const SEVEN_DAYS_MS = 7 * 24 * 60 * 60 * 1000;
+
+// Relative time for fresh orders (so farmers see "2 小時前" / "昨天"), absolute
+// date once an order is more than a week old (relative becomes useless at that
+// scale and farmers want to know which day).
+function formatCreatedAt(createdAt: Date | string | null): string {
+  if (!createdAt) return '';
+  const d = new Date(createdAt);
+  if (isNaN(d.getTime())) return '';
+  const ageMs = Date.now() - d.getTime();
+  if (ageMs < SEVEN_DAYS_MS) {
+    return formatDistanceToNow(d, { addSuffix: true, locale: zhTW });
+  }
+  return `${d.getMonth() + 1}/${d.getDate()}`;
+}
 
 const STATUS_LABEL: Record<string, string> = {
   draft: '待確認',
@@ -49,9 +67,12 @@ export function OrderCard({ order }: { order: OrderWithItems }) {
           <span className="font-mono text-sm font-semibold text-zinc-700">
             {order.order_number ?? '（草稿）'}
           </span>
-          <Badge className={STATUS_CLASS[order.status] ?? ''}>
-            {STATUS_LABEL[order.status] ?? order.status}
-          </Badge>
+          <div className="flex items-center gap-1.5 shrink-0">
+            <span className="text-[11px] text-zinc-400">{formatCreatedAt(order.created_at)}</span>
+            <Badge className={STATUS_CLASS[order.status] ?? ''}>
+              {STATUS_LABEL[order.status] ?? order.status}
+            </Badge>
+          </div>
         </div>
 
         <div className="text-sm text-zinc-700">

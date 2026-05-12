@@ -1,6 +1,6 @@
 import { type NextRequest, NextResponse } from 'next/server';
 import { getCurrentFarmer } from '@/lib/auth/require-farmer';
-import { listOrders } from '@/lib/queries/orders';
+import { listOrders, type SortDirection } from '@/lib/queries/orders';
 
 export async function GET(req: NextRequest) {
   const farmer = await getCurrentFarmer();
@@ -10,7 +10,16 @@ export async function GET(req: NextRequest) {
   const q = searchParams.get('q') ?? '';
   const intake = searchParams.get('intake') ?? '';
   const page = Math.max(1, Number(searchParams.get('page') ?? '1'));
+  const sortParam = searchParams.get('sort');
+  const sort: SortDirection = sortParam === 'asc' ? 'asc' : 'desc';
 
-  const result = await listOrders({ farmerId: farmer.id, status, q, intake, page });
+  const result = await listOrders({
+    farmerId: farmer.id,
+    status,
+    q,
+    intake,
+    page,
+    sort,
+  });
   return NextResponse.json(result);
 }

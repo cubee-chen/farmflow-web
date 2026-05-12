@@ -1,4 +1,4 @@
-import { and, desc, eq, ilike, inArray, or, sql } from 'drizzle-orm';
+import { and, asc, desc, eq, ilike, inArray, or, sql } from 'drizzle-orm';
 import { db } from '@/lib/db';
 import { orders, orderItems, products } from '@/lib/db/schema';
 import type { Order } from '@/lib/db/schema';
@@ -40,18 +40,22 @@ function buildWhere(farmerId: string, status: string, q: string, intake: string)
   );
 }
 
+export type SortDirection = 'asc' | 'desc';
+
 export async function listOrders({
   farmerId,
   status = '',
   q = '',
   intake = '',
   page = 1,
+  sort = 'desc',
 }: {
   farmerId: string;
   status?: string;
   q?: string;
   intake?: string;
   page?: number;
+  sort?: SortDirection;
 }): Promise<{ orders: OrderWithItems[]; hasMore: boolean }> {
   const where = buildWhere(farmerId, status, q, intake);
   const limit = PAGE_SIZE + 1;
@@ -61,7 +65,7 @@ export async function listOrders({
     .select()
     .from(orders)
     .where(where)
-    .orderBy(desc(orders.created_at))
+    .orderBy(sort === 'asc' ? asc(orders.created_at) : desc(orders.created_at))
     .limit(limit)
     .offset(offset);
 
