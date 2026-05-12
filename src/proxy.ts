@@ -41,12 +41,14 @@ export async function proxy(request: NextRequest) {
     return supabaseResponse;
   }
 
-  // Public API paths (no auth required). Cron routes are protected by CRON_SECRET
-  // bearer header inside the route handler, not by Supabase auth.
+  // Public paths. Cron routes and /admin/* are protected by ADMIN_SECRET /
+  // CRON_SECRET bearer header inside the route handler, not by Supabase auth.
   if (
     pathname.startsWith('/api/health') ||
     pathname.startsWith('/api/line-webhook/') ||
-    pathname.startsWith('/api/cron/')
+    pathname.startsWith('/api/cron/') ||
+    pathname.startsWith('/api/admin/') ||
+    pathname.startsWith('/admin/')
   ) {
     return supabaseResponse;
   }
