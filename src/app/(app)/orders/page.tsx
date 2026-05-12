@@ -6,6 +6,7 @@ import {
 } from '@/lib/queries/orders';
 import { OrdersFilters } from './_components/orders-filters';
 import { OrdersInfiniteList } from './_components/orders-infinite-list';
+import { OrdersSortToggle } from './_components/orders-sort-toggle';
 
 interface Props {
   searchParams: Promise<{
@@ -39,7 +40,10 @@ export default async function OrdersPage({ searchParams }: Props) {
 
   return (
     <div className="p-4">
-      <h1 className="text-2xl font-bold mb-4">訂單管理</h1>
+      <div className="flex items-center justify-between gap-3 mb-4">
+        <h1 className="text-2xl font-bold">訂單管理</h1>
+        <OrdersSortToggle sort={sort} />
+      </div>
       <OrdersFilters status={status} q={q} intake={intake} sort={sort} counts={counts} />
       <OrdersInfiniteList
         key={`${status}__${q}__${intake}__${sort}`}

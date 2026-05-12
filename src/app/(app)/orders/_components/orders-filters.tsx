@@ -1,9 +1,7 @@
 'use client';
 import { useRouter, usePathname } from 'next/navigation';
 import { useCallback, useRef, useTransition } from 'react';
-import { ArrowDownNarrowWide, ArrowUpWideNarrow } from 'lucide-react';
 import { Input } from '@/components/ui/input';
-import { Button } from '@/components/ui/button';
 import type { StatusCounts, SortDirection } from '@/lib/queries/orders';
 
 // 「待確認」 sits first because it's the chip a farmer typically needs to act
@@ -58,47 +56,27 @@ export function OrdersFilters({ status, q, intake, sort, counts }: Props) {
     debounceRef.current = setTimeout(() => push(status, value, intake, sort), 300);
   }
 
-  function toggleSort() {
-    push(status, q, intake, sort === 'desc' ? 'asc' : 'desc');
-  }
-
   return (
     <div className="flex flex-col gap-3 mb-4">
-      <div className="flex items-center gap-2">
-        <div className="flex gap-2 overflow-x-auto pb-1 scrollbar-none flex-1 min-w-0">
-          {STATUS_CHIPS.map((chip) => {
-            const active = status === chip.value && !intake;
-            const n = counts[chip.countKey];
-            return (
-              <button
-                key={chip.value}
-                onClick={() => push(chip.value, q, '', sort)}
-                className={`shrink-0 rounded-full px-4 py-1.5 text-sm font-medium transition-colors ${
-                  active ? 'bg-zinc-900 text-white' : 'bg-zinc-100 text-zinc-600 hover:bg-zinc-200'
-                }`}
-              >
-                {chip.label}
-                <span className={`ml-1 text-xs ${active ? 'text-zinc-300' : 'text-zinc-400'}`}>
-                  {n}
-                </span>
-              </button>
-            );
-          })}
-        </div>
-        <Button
-          variant="outline"
-          size="sm"
-          onClick={toggleSort}
-          className="shrink-0 h-8 gap-1.5 text-xs"
-          aria-label={`切換排序，目前${sort === 'desc' ? '新→舊' : '舊→新'}`}
-        >
-          {sort === 'desc' ? (
-            <ArrowDownNarrowWide className="size-3.5" />
-          ) : (
-            <ArrowUpWideNarrow className="size-3.5" />
-          )}
-          {sort === 'desc' ? '新→舊' : '舊→新'}
-        </Button>
+      <div className="flex gap-2 overflow-x-auto pb-1 scrollbar-none">
+        {STATUS_CHIPS.map((chip) => {
+          const active = status === chip.value && !intake;
+          const n = counts[chip.countKey];
+          return (
+            <button
+              key={chip.value}
+              onClick={() => push(chip.value, q, '', sort)}
+              className={`shrink-0 rounded-full px-4 py-1.5 text-sm font-medium transition-colors ${
+                active ? 'bg-zinc-900 text-white' : 'bg-zinc-100 text-zinc-600 hover:bg-zinc-200'
+              }`}
+            >
+              {chip.label}
+              <span className={`ml-1 text-xs ${active ? 'text-zinc-300' : 'text-zinc-400'}`}>
+                {n}
+              </span>
+            </button>
+          );
+        })}
       </div>
 
       <div className="flex gap-2 overflow-x-auto pb-1 scrollbar-none">
