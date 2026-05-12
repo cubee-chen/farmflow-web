@@ -342,3 +342,31 @@ export const pendingImageGroups = pgTable(
 
 export type PendingImageGroup = InferSelectModel<typeof pendingImageGroups>;
 export type NewPendingImageGroup = InferInsertModel<typeof pendingImageGroups>;
+
+// Mirror of pending_image_groups for free-text LINE messages. Customers often
+// split one order across multiple short messages ("我要 2 箱中的" / "0956...
+// 汪汪明" / "台中…") within a minute; flushing on a window lets the LLM see
+// the whole thing as one prompt instead of producing three malformed drafts.
+export const pendingTextGroups = pgTable(
+  'pending_text_groups',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    farmer_id: uuid('farmer_id').notNull().references(() => farmers.id),
+    source_user_id: text('source_user_id').notNull(),
+    texts: text('texts').array().notNull().default(sql`ARRAY[]::text[]`),
+    line_message_ids: text('line_message_ids').array().notNull().default(sql`ARRAY[]::text[]`),
+    first_received_at: timestamp('first_received_at', { withTimezone: true }).notNull().defaultNow(),
+    last_received_at: timestamp('last_received_at', { withTimezone: true }).notNull().defaultNow(),
+    status: text('status').notNull().default('pending'),
+    processed_order_id: uuid('processed_order_id').references(() => orders.id, { onDelete: 'set null' }),
+    processing_error: text('processing_error'),
+  },
+  (table) => [
+    uniqueIndex('pending_text_groups_active_idx')
+      .on(table.farmer_id, table.source_user_id)
+      .where(sql`status = 'pending'`),
+  ]
+);
+
+export type PendingTextGroup = InferSelectModel<typeof pendingTextGroups>;
+export type NewPendingTextGroup = InferInsertModel<typeof pendingTextGroups>;

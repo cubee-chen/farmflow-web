@@ -8,6 +8,7 @@ import {
   orderItems,
   orders,
   pendingImageGroups,
+  pendingTextGroups,
   products,
   type Farmer,
 } from '@/lib/db/schema';
@@ -33,6 +34,11 @@ interface LineSource {
 // Image group window: 30s of no new image flushes the group as one order.
 // State lives in pending_image_groups so we survive function instance churn.
 const GROUP_TIMEOUT_MS = 30_000;
+
+// Text group window: customers commonly split one order across 2–4 short
+// messages ("我要 2 箱中的" / "0956... 汪汪明" / "台中市…"). 90s is long enough
+// for typing pauses but doesn't make farmers wait visibly longer.
+const TEXT_GROUP_TIMEOUT_MS = 90_000;
 
 // ── Helpers ─────────────────────────────────────────────────────────────────────
 
@@ -380,6 +386,147 @@ export async function processGroupIfReady(
   }
 }
 
+// ── Text group: DB-backed grouping with 90s flush window ───────────────────────
+
+// Append a text chunk to the active pending group, or create one. Same race
+// pattern as upsertPendingGroup (image variant) — the partial unique index
+// guarantees a single active row per (farmer, user).
+async function upsertPendingTextGroup(
+  farmerId: string,
+  sourceUserId: string,
+  text: string,
+  messageId: string,
+): Promise<string> {
+  const [existing] = await db
+    .select({ id: pendingTextGroups.id })
+    .from(pendingTextGroups)
+    .where(
+      and(
+        eq(pendingTextGroups.farmer_id, farmerId),
+        eq(pendingTextGroups.source_user_id, sourceUserId),
+        eq(pendingTextGroups.status, 'pending'),
+      ),
+    )
+    .limit(1);
+
+  if (existing) {
+    await db
+      .update(pendingTextGroups)
+      .set({
+        texts: sql`array_append(${pendingTextGroups.texts}, ${text})`,
+        line_message_ids: sql`array_append(${pendingTextGroups.line_message_ids}, ${messageId})`,
+        last_received_at: new Date(),
+      })
+      .where(eq(pendingTextGroups.id, existing.id));
+    return existing.id;
+  }
+
+  try {
+    const [created] = await db
+      .insert(pendingTextGroups)
+      .values({
+        farmer_id: farmerId,
+        source_user_id: sourceUserId,
+        texts: [text],
+        line_message_ids: [messageId],
+      })
+      .returning({ id: pendingTextGroups.id });
+    return created.id;
+  } catch (err) {
+    const code = (err as { cause?: { code?: string } }).cause?.code;
+    if (code !== '23505') throw err;
+
+    const [retry] = await db
+      .update(pendingTextGroups)
+      .set({
+        texts: sql`array_append(${pendingTextGroups.texts}, ${text})`,
+        line_message_ids: sql`array_append(${pendingTextGroups.line_message_ids}, ${messageId})`,
+        last_received_at: new Date(),
+      })
+      .where(
+        and(
+          eq(pendingTextGroups.farmer_id, farmerId),
+          eq(pendingTextGroups.source_user_id, sourceUserId),
+          eq(pendingTextGroups.status, 'pending'),
+        ),
+      )
+      .returning({ id: pendingTextGroups.id });
+    return retry.id;
+  }
+}
+
+export async function processTextGroupIfReady(
+  groupId: string,
+  farmer: Farmer,
+  customerId: string | null,
+): Promise<void> {
+  const [group] = await db
+    .select()
+    .from(pendingTextGroups)
+    .where(eq(pendingTextGroups.id, groupId))
+    .limit(1);
+
+  if (!group || group.status !== 'pending') return;
+
+  const ageMs = Date.now() - new Date(group.last_received_at).getTime();
+  if (ageMs < TEXT_GROUP_TIMEOUT_MS - 500) return; // a later timer will fire
+
+  const [claimed] = await db
+    .update(pendingTextGroups)
+    .set({ status: 'processed' })
+    .where(and(eq(pendingTextGroups.id, groupId), eq(pendingTextGroups.status, 'pending')))
+    .returning({ id: pendingTextGroups.id, texts: pendingTextGroups.texts });
+
+  if (!claimed) return;
+
+  try {
+    // Concatenate so the LLM sees the conversation as one coherent message.
+    // Newline-joined matches how the parser already handles paste-mode input.
+    const combinedText = claimed.texts.join('\n');
+
+    const farmerProducts = await db
+      .select()
+      .from(products)
+      .where(eq(products.farmer_id, farmer.id));
+
+    const draft = await parseOrderText(combinedText, farmer, farmerProducts);
+
+    // Same safety net as the single-message path.
+    if (
+      draft.items.length === 0 &&
+      !draft.recipient_address &&
+      draft.confidence < 0.3
+    ) {
+      await db
+        .update(pendingTextGroups)
+        .set({ processing_error: 'no order content detected' })
+        .where(eq(pendingTextGroups.id, groupId));
+      return;
+    }
+
+    const orderId = await createDraftOrder({
+      farmerId: farmer.id,
+      draft,
+      rawText: combinedText,
+      rawImageUrls: null,
+      imageQuality: null,
+      customerId,
+    });
+
+    await db
+      .update(pendingTextGroups)
+      .set({ processed_order_id: orderId })
+      .where(eq(pendingTextGroups.id, groupId));
+  } catch (err) {
+    const msg = formatErrorWithCause(err);
+    console.error('[webhook] text group processing failed:', msg);
+    await db
+      .update(pendingTextGroups)
+      .set({ processing_error: msg })
+      .where(eq(pendingTextGroups.id, groupId));
+  }
+}
+
 // ── Main export ─────────────────────────────────────────────────────────────────
 
 export async function processLineEvent(
@@ -411,10 +558,13 @@ export async function processLineEvent(
 
     if (messageType === 'text') {
       const rawText = message?.text as string ?? '';
+      const messageId = message?.id as string | undefined;
 
       // Pre-check: short customer replies like "已轉帳" or "末5碼：59681" must
       // not become draft orders. Regex catches the obvious cases cheaply;
-      // LLM second-pass disambiguates borderline messages.
+      // LLM second-pass disambiguates borderline messages. Payment replies
+      // also bypass the group window so the last-5 lands on the existing
+      // unpaid order even mid-conversation.
       if (looksLikePaymentReply(rawText) && (await classifyAsPaymentReply(rawText))) {
         const result = await applyPaymentReply({
           farmerId: farmer.id,
@@ -437,6 +587,32 @@ export async function processLineEvent(
         return;
       }
 
+      // Group sourceUserId-bound text messages within a 90s window so multi-
+      // line orders ("我要 2 箱中的" / "0956... 汪汪明" / "台中…") become one
+      // draft. Group flush handles parser + safety net + order creation.
+      if (sourceUserId) {
+        const textGroupId = await upsertPendingTextGroup(
+          farmer.id,
+          sourceUserId,
+          rawText,
+          messageId ?? `${Date.now()}`,
+        );
+
+        setTimeout(() => {
+          processTextGroupIfReady(textGroupId, farmer, customerId).catch((err) =>
+            console.error('[webhook] processTextGroupIfReady failed:', err),
+          );
+        }, TEXT_GROUP_TIMEOUT_MS);
+
+        await db
+          .update(lineWebhookEvents)
+          .set({ processing_status: 'processed' })
+          .where(eq(lineWebhookEvents.id, eventId));
+        return;
+      }
+
+      // Fallback: no sourceUserId (rare; group sources etc.) → parse standalone
+      // with the original safety net.
       const farmerProducts = await db
         .select()
         .from(products)
@@ -444,9 +620,6 @@ export async function processLineEvent(
 
       const draft = await parseOrderText(rawText, farmer, farmerProducts);
 
-      // Safety net: if the parser found no items, no address, and is unsure,
-      // it almost certainly is not a real order (e.g. a stray comment) —
-      // skip rather than litter the order list.
       if (
         draft.items.length === 0 &&
         !draft.recipient_address &&
