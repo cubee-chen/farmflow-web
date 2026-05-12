@@ -16,6 +16,18 @@ import { buildOrderNotificationVars } from './build-vars';
 type TriggerEvent = 'confirmed' | 'paid' | 'shipped';
 type DispatchStatus = 'sent' | 'skipped' | 'failed';
 
+// Built-in fallback templates used when the farmer has not yet customised one
+// in /settings. Same variable surface as buildOrderNotificationVars so the
+// existing renderer just works.
+const DEFAULT_TEMPLATES: Record<TriggerEvent, string> = {
+  confirmed:
+    '您好 {recipient_name}！已收到您的訂單 {order_number}，共 {total_amount}，請在出貨前完成轉帳並回傳帳號末五碼，感謝！',
+  paid:
+    '您好 {recipient_name}！已收到您的款項 {total_amount}（訂單 {order_number}），訂單將儘速備貨出貨，感謝！',
+  shipped:
+    '您好 {recipient_name}！您的訂單 {order_number} 已出貨，運送單號：{tracking_number}，預計到貨：{desired_arrival_date}。感謝您的購買！',
+};
+
 async function insertLog(params: {
   farmerId: string;
   orderId: string;
@@ -94,10 +106,10 @@ export async function dispatchNotification(params: {
     )
     .limit(1);
 
-  if (!template) {
-    await insertLog({ farmerId: order.farmer_id, orderId, triggerEvent, status: 'skipped', errorMessage: 'no template' });
-    return { status: 'skipped', reason: 'no template' };
-  }
+  // Fall back to the built-in template if the farmer has not customised one
+  // for this trigger. Avoids the previous "no template" skip path so dispatch
+  // works out-of-the-box even without seeding settings.
+  const templateText = template?.template_text ?? DEFAULT_TEMPLATES[triggerEvent];
 
   // c. Prerequisites
   if (!farmer.line_channel_access_token) {
@@ -139,7 +151,7 @@ export async function dispatchNotification(params: {
     shipping_provider: order.shipping_provider,
     items: itemRows.map((i) => ({ display_name: i.display_name, quantity: i.quantity })),
   });
-  const text = renderNotificationTemplate(template.template_text, vars);
+  const text = renderNotificationTemplate(templateText, vars);
 
   // f. Send
   try {

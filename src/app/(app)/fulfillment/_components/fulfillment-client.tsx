@@ -176,10 +176,21 @@ export function FulfillmentClient({ orders, activeStage, activeFilter }: Props) 
         body: JSON.stringify({ orderIds: ids, status: 'shipped', dispatch: true }),
       });
       if (!res.ok) throw new Error('更新失敗');
-      const data = (await res.json()) as { updated: number; dispatched?: number };
-      const dispatchedNote =
-        typeof data.dispatched === 'number' ? `，已推播 ${data.dispatched} 則 LINE 通知` : '';
-      toast.success(`已將 ${data.updated} 筆訂單標記為「已出貨」${dispatchedNote}`);
+      const data = (await res.json()) as {
+        updated: number;
+        dispatched?: number;
+        skippedNoLine?: number;
+      };
+      // Break down the result so the farmer doesn't see a confusing "已推播 0 則"
+      // when none of the selected customers have a LINE binding.
+      const parts: string[] = [`已標已出貨 ${data.updated} 筆`];
+      if (typeof data.dispatched === 'number' && data.dispatched > 0) {
+        parts.push(`已推播 LINE ${data.dispatched} 筆`);
+      }
+      if (typeof data.skippedNoLine === 'number' && data.skippedNoLine > 0) {
+        parts.push(`${data.skippedNoLine} 筆未綁定 LINE，需手動通知`);
+      }
+      toast.success(parts.join('・'));
       setShippedDialogOpen(false);
       setSelectedIds(new Set());
       router.refresh();
@@ -293,17 +304,24 @@ export function FulfillmentClient({ orders, activeStage, activeFilter }: Props) 
                   className="mt-0.5"
                 />
                 <div className="flex-1 min-w-0">
-                  <div className="flex items-center justify-between gap-2 mb-1">
+                  <div className="flex items-center justify-between gap-2 mb-1 flex-wrap">
                     <span className="font-mono text-sm font-semibold text-zinc-700 truncate">
                       {order.order_number ?? '（草稿）'}
                     </span>
-                    <Badge
-                      className={
-                        PAYMENT_STATUS_CLASS[order.payment_status ?? ''] ?? 'bg-zinc-100 text-zinc-600'
-                      }
-                    >
-                      {PAYMENT_STATUS_LABEL[order.payment_status ?? ''] ?? order.payment_status}
-                    </Badge>
+                    <div className="flex items-center gap-1.5 shrink-0">
+                      {!order.has_line_binding && (
+                        <Badge className="bg-amber-50 text-amber-700 hover:bg-amber-50 text-[10px]">
+                          未綁 LINE
+                        </Badge>
+                      )}
+                      <Badge
+                        className={
+                          PAYMENT_STATUS_CLASS[order.payment_status ?? ''] ?? 'bg-zinc-100 text-zinc-600'
+                        }
+                      >
+                        {PAYMENT_STATUS_LABEL[order.payment_status ?? ''] ?? order.payment_status}
+                      </Badge>
+                    </div>
                   </div>
                   <div className="text-sm text-zinc-800 font-medium">
                     {order.recipient_name}

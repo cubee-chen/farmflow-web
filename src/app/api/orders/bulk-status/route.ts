@@ -1,8 +1,8 @@
 import { type NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
-import { and, eq, inArray } from 'drizzle-orm';
+import { and, eq, inArray, isNotNull } from 'drizzle-orm';
 import { db } from '@/lib/db';
-import { orderEvents, orders } from '@/lib/db/schema';
+import { customers, orderEvents, orders } from '@/lib/db/schema';
 import { getCurrentFarmer } from '@/lib/auth/require-farmer';
 import { dispatchNotification } from '@/lib/notify/dispatch';
 
@@ -55,8 +55,20 @@ export async function POST(req: NextRequest) {
   // bulk trigger from the UI; 'confirmed'/'paid' are sent from their own
   // single-order entrypoints (intake confirm, reconciliation confirm).
   let dispatched = 0;
-  if (shouldDispatch && status === 'shipped') {
+  let skippedNoLine = 0;
+  if (shouldDispatch && status === 'shipped' && updatedOrderIds.length > 0) {
+    // Pre-compute which updated orders have a LINE-bound customer so the
+    // toast can show a clear breakdown instead of just "已推播 0 則".
+    const lineBoundRows = await db
+      .select({ id: orders.id })
+      .from(orders)
+      .leftJoin(customers, eq(orders.customer_id, customers.id))
+      .where(and(inArray(orders.id, updatedOrderIds), isNotNull(customers.line_user_id)));
+    const lineBoundSet = new Set(lineBoundRows.map((r) => r.id));
+    skippedNoLine = updatedOrderIds.length - lineBoundSet.size;
+
     for (const orderId of updatedOrderIds) {
+      if (!lineBoundSet.has(orderId)) continue;
       try {
         const result = await dispatchNotification({ orderId, triggerEvent: 'shipped' });
         if (result.status === 'sent') dispatched++;
@@ -66,5 +78,9 @@ export async function POST(req: NextRequest) {
     }
   }
 
-  return NextResponse.json({ updated: updatedOrderIds.length, dispatched });
+  return NextResponse.json({
+    updated: updatedOrderIds.length,
+    dispatched,
+    skippedNoLine,
+  });
 }

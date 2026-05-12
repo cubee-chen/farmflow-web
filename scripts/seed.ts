@@ -12,6 +12,8 @@ import {
 const NOTIFICATION_TEXTS: Record<string, string> = {
   confirmed:
     '我們已收到您的訂單～\n\n訂購內容：{items_summary}\n收件人：{recipient_name}\n地址：{recipient_address}\n金額：${total_amount}\n\n請在出貨前完成轉帳，麻煩告知帳號末五碼，謝謝！',
+  paid:
+    '已收到您的款項 {total_amount}（訂單 {order_number}），訂單即將備貨出貨～感謝您的支持！',
   shipped:
     '您的訂單已出貨～\n貨運：{shipping_provider}\n單號：{tracking_number}\n預計到貨：{desired_arrival_date}\n收到請麻煩通知一聲，感謝！',
 };

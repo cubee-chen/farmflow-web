@@ -1,6 +1,6 @@
 import { and, eq, inArray } from 'drizzle-orm';
 import { db } from '@/lib/db';
-import { orders, orderItems, products } from '@/lib/db/schema';
+import { customers, orders, orderItems, products } from '@/lib/db/schema';
 import type { Order } from '@/lib/db/schema';
 
 export type FulfillmentItem = {
@@ -11,6 +11,7 @@ export type FulfillmentItem = {
 
 export type FulfillmentOrder = Order & {
   items: FulfillmentItem[];
+  has_line_binding: boolean;
 };
 
 export type FulfillmentStage = 'todo' | 'packing' | 'all';
@@ -49,16 +50,23 @@ export async function listFulfillmentOrders({
   if (rows.length === 0) return [];
 
   const orderIds = rows.map((o) => o.id);
-  const itemRows = await db
-    .select({
-      order_id: orderItems.order_id,
-      quantity: orderItems.quantity,
-      display_name: products.display_name,
-      weight_g: products.weight_g,
-    })
-    .from(orderItems)
-    .leftJoin(products, eq(products.id, orderItems.product_id))
-    .where(inArray(orderItems.order_id, orderIds));
+  const [itemRows, lineRows] = await Promise.all([
+    db
+      .select({
+        order_id: orderItems.order_id,
+        quantity: orderItems.quantity,
+        display_name: products.display_name,
+        weight_g: products.weight_g,
+      })
+      .from(orderItems)
+      .leftJoin(products, eq(products.id, orderItems.product_id))
+      .where(inArray(orderItems.order_id, orderIds)),
+    db
+      .select({ order_id: orders.id, line_user_id: customers.line_user_id })
+      .from(orders)
+      .leftJoin(customers, eq(orders.customer_id, customers.id))
+      .where(inArray(orders.id, orderIds)),
+  ]);
 
   const byId = itemRows.reduce<Record<string, FulfillmentItem[]>>((acc, r) => {
     (acc[r.order_id] ??= []).push({
@@ -69,5 +77,13 @@ export async function listFulfillmentOrders({
     return acc;
   }, {});
 
-  return rows.map((o) => ({ ...o, items: byId[o.id] ?? [] }));
+  const lineBoundIds = new Set(
+    lineRows.filter((r) => r.line_user_id).map((r) => r.order_id)
+  );
+
+  return rows.map((o) => ({
+    ...o,
+    items: byId[o.id] ?? [],
+    has_line_binding: lineBoundIds.has(o.id),
+  }));
 }

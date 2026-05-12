@@ -22,6 +22,18 @@ interface ConfirmedOrder {
   pushSentAt: string | null;
 }
 
+const SKIP_REASON_LABEL: Record<string, string> = {
+  'no template': '尚未設定通知模板（系統已用預設模板）',
+  'farmer not configured': '尚未設定 LINE Channel Token',
+  'customer not linked': '客戶未綁定 LINE',
+  'already_sent': '已推播過（防重複）',
+};
+
+function localizePushError(raw: string | null): string | null {
+  if (!raw) return null;
+  return SKIP_REASON_LABEL[raw] ?? raw;
+}
+
 function fmt(amount: string) {
   return `NT$${Number(amount).toLocaleString()}`;
 }
@@ -208,7 +220,7 @@ export function ConfirmedSummaryClient({
                 </p>
                 {o.pushError && (
                   <p className="text-[11px] text-red-600 mt-0.5 line-clamp-1">
-                    {o.pushError}
+                    {localizePushError(o.pushError)}
                   </p>
                 )}
               </div>
